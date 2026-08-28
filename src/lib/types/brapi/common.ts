@@ -1,16 +1,19 @@
 export interface ExternalReference {
-	referenceID?: string;
+	/** The external reference ID. Could be a simple string or a URI. */
+	referenceId?: string;
 	referenceSource?: string;
 }
 
 export interface OntologyReferenceLink {
 	URL?: string;
-	type?: string;
+	type?: 'OBO' | 'RDF' | 'WEBPAGE';
 }
 
 export interface OntologyReference {
-	ontologyDbId?: string;
-	ontologyName?: string;
+	ontologyDbId: string;
+	ontologyName: string;
+	/** The ID which uniquely identifies a ontology reference. */
+	ontologyReferenceDbId?: string;
 	version?: string;
 	documentationLinks?: OntologyReferenceLink[];
 }

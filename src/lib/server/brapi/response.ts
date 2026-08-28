@@ -23,6 +23,14 @@ export interface BrapiListResponse<T> {
 	};
 }
 
+export interface BrapiSingleResponse<T> {
+	metadata: {
+		datafiles: unknown[];
+		status: BrapiStatus[];
+	};
+	result: T;
+}
+
 const DEFAULT_PAGE_SIZE = 1000;
 
 /**
@@ -66,6 +74,14 @@ export function brapiListResponse<T>(
 			status: []
 		},
 		result: { data }
+	};
+}
+
+/** Wraps a single result in the BrAPI standard non-paginated response envelope. */
+export function brapiSingleResponse<T>(result: T): BrapiSingleResponse<T> {
+	return {
+		metadata: { datafiles: [], status: [] },
+		result
 	};
 }
 

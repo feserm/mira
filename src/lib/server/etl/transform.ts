@@ -1,4 +1,4 @@
-import type { NewTrial, NewStudy } from '$lib/types/brapi/core';
+import type { NewTrial, NewStudy, NewContact } from '$lib/types/brapi/core';
 import type {
 	NewCrossingProject,
 	NewCross,
@@ -16,9 +16,18 @@ import type {
 } from '$lib/types/brapi/phenotyping';
 import { ARC } from '@nfdi4plants/arctrl';
 
+/** A study-level contact, paired with the ARC identifier of the study it belongs to
+ *  (studies aren't upserted yet at transform time, so they have no database id to link by). */
+export interface StudyContactLink {
+	studySourceId: string;
+	contact: NewContact;
+}
+
 export interface TransformResult {
 	trials: NewTrial[];
+	contacts: NewContact[];
 	studies: NewStudy[];
+	studyContacts: StudyContactLink[];
 	crossingProjects: NewCrossingProject[];
 	crosses: NewCross[];
 	plannedCrosses: NewPlannedCross[];
@@ -37,17 +46,20 @@ export interface TransformResult {
  * capture journal/year/volume, so author list and title are all that's available to cite.
  */
 function formatVancouverCitation(authors?: string, title?: string): string | undefined {
-    let formattedAuthors = authors?.trim();
-    if (formattedAuthors) {
-        const authorList = formattedAuthors.split(',').map((a) => a.trim()).filter(Boolean);
-        if (authorList.length > 6) {
-            formattedAuthors = `${authorList.slice(0, 6).join(', ')}, et al`;
-        }
-    }
-    const parts = [formattedAuthors, title]
-        .map((part) => part?.trim().replace(/\.+$/, ''))
-        .filter((part): part is string => !!part);
-    return parts.length > 0 ? `${parts.join('. ')}.` : undefined;
+	let formattedAuthors = authors?.trim();
+	if (formattedAuthors) {
+		const authorList = formattedAuthors
+			.split(',')
+			.map((a) => a.trim())
+			.filter(Boolean);
+		if (authorList.length > 6) {
+			formattedAuthors = `${authorList.slice(0, 6).join(', ')}, et al`;
+		}
+	}
+	const parts = [formattedAuthors, title]
+		.map((part) => part?.trim().replace(/\.+$/, ''))
+		.filter((part): part is string => !!part);
+	return parts.length > 0 ? `${parts.join('. ')}.` : undefined;
 }
 
 /**
@@ -79,9 +91,69 @@ export function transformRoCrate(rawRoCrate: unknown, arcId: number): TransformR
 		}))
 	};
 
+	const contacts: NewContact[] = investigation.Contacts.map((person) => ({
+		name: [person.FirstName, person.MidInitials, person.LastName].filter(Boolean).join(' '),
+		email: person.EMail,
+		orcid: person.ORCID,
+		type:
+			person.Roles.map((role) => role.NameText)
+				.filter(Boolean)
+				.join(', ') || undefined,
+		instituteName: person.Affiliation
+	}));
+
+	// Study fields sourced from a plain top-level ISA "Comment[...]" are looked up by name,
+	// same as the trial's License comment above. Fields whose ARC source is an annotation-table
+	// characteristic (e.g. start date, growth facility type, experimental design description,
+	// map of experimental design) aren't mapped here — this transform doesn't parse ArcTables.
+	const studies: NewStudy[] = investigation.Studies.map((arcStudy) => {
+		const studyComments = arcStudy.Comments;
+		const findComment = (name: string) => studyComments.find((c) => c.Name === name)?.Value;
+
+		const growthFacilityDescription = findComment('Description of growth facility');
+		const observationUnitLevelHierarchy = findComment('Observation unit level hierarchy');
+		const [firstDesignDescriptor] = arcStudy.StudyDesignDescriptors;
+
+		return {
+			arcId,
+			sourceId: arcStudy.Identifier,
+			name: arcStudy.Title ?? arcStudy.Identifier,
+			studyCode: arcStudy.Identifier,
+			description: arcStudy.Description,
+			endDate: findComment('End date of study'),
+			culturalPractices: findComment('Cultural practices'),
+			observationUnitsDescription: findComment('Observation unit description'),
+			experimentalDesign: firstDesignDescriptor
+				? { PUI: firstDesignDescriptor.TermAccessionNumber }
+				: undefined,
+			growthFacility: growthFacilityDescription
+				? { description: growthFacilityDescription }
+				: undefined,
+			additionalInfo: observationUnitLevelHierarchy ? { observationUnitLevelHierarchy } : undefined
+		};
+	});
+
+	const studyContacts: StudyContactLink[] = investigation.Studies.flatMap((arcStudy) =>
+		arcStudy.Contacts.map((person) => ({
+			studySourceId: arcStudy.Identifier,
+			contact: {
+				name: [person.FirstName, person.MidInitials, person.LastName].filter(Boolean).join(' '),
+				email: person.EMail,
+				orcid: person.ORCID,
+				type:
+					person.Roles.map((role) => role.NameText)
+						.filter(Boolean)
+						.join(', ') || undefined,
+				instituteName: person.Affiliation
+			}
+		}))
+	);
+
 	return {
 		trials: [trial],
-		studies: [],
+		contacts,
+		studies,
+		studyContacts,
 		crossingProjects: [],
 		crosses: [],
 		plannedCrosses: [],

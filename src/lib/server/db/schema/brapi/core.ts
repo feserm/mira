@@ -9,8 +9,10 @@ import {
 	date,
 	jsonb,
 	unique,
+	uniqueIndex,
 	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { roCrateStaging } from '../staging/schema';
 import type { ExternalReference, AdditionalInfo, GeoJSON } from '$lib/types/brapi/common';
 import type {
@@ -42,19 +44,31 @@ export const person = pgTable('person', {
 		.notNull()
 });
 
-export const contact = pgTable('contact', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	name: text('name'),
-	email: text('email'),
-	instituteName: text('institute_name'),
-	orcid: text('orcid').unique(),
-	type: text('type'),
-	createdAt: timestamp('created_at').defaultNow().notNull(),
-	updatedAt: timestamp('updated_at')
-		.defaultNow()
-		.$onUpdate(() => new Date())
-		.notNull()
-});
+export const contact = pgTable(
+	'contact',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		name: text('name'),
+		email: text('email').unique(),
+		instituteName: text('institute_name'),
+		orcid: text('orcid').unique(),
+		type: text('type'),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		updatedAt: timestamp('updated_at')
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull()
+	},
+	// ORCID and email are the real identity keys (each already unique above). When a
+	// contact has neither - common for ISA-Tab contacts, which aren't required to carry
+	// either - name + institute is the only identity left to dedupe repeat appearances
+	// of the same person across studies/re-imports on.
+	(table) => [
+		uniqueIndex('contact_name_institute_unique')
+			.on(table.name, table.instituteName)
+			.where(sql`${table.orcid} is null and ${table.email} is null`)
+	]
+);
 
 export const season = pgTable(
 	'season',

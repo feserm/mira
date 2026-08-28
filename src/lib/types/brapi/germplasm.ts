@@ -33,8 +33,8 @@ export interface GermplasmSynonym {
 }
 
 export interface TaxonId {
-	sourceName?: string;
-	taxonId?: string;
+	sourceName: string;
+	taxonId: string;
 }
 
 export interface GermplasmOrigin {

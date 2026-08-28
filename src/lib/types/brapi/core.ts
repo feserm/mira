@@ -107,3 +107,54 @@ export interface BrapiTrial {
 	externalReferences: ExternalReference[];
 	additionalInfo: AdditionalInfo;
 }
+
+/**
+ * BrAPI wire-format Study, as returned by GET /studies. `dataLinks` and
+ * `environmentParameters` have no backing column/table yet, so they're always `[]`.
+ */
+export interface BrapiStudy {
+	studyDbId: string;
+	studyName?: string | null;
+	studyDescription?: string | null;
+	studyCode?: string | null;
+	studyPUI?: string | null;
+	studyType?: string | null;
+	commonCropName?: string | null;
+	active?: boolean | null;
+	startDate?: string | null;
+	endDate?: string | null;
+	culturalPractices?: string | null;
+	documentationURL?: string | null;
+	license?: string | null;
+	observationUnitsDescription?: string | null;
+	observationLevels: ObservationLevel[];
+	observationVariableDbIds: string[];
+	experimentalDesign?: ExperimentalDesign | null;
+	growthFacility?: GrowthFacility | null;
+	lastUpdate?: StudyLastUpdate | null;
+	trialDbId?: string | null;
+	trialName?: string | null;
+	locationDbId?: string | null;
+	locationName?: string | null;
+	seasons: string[];
+	contacts: BrapiContact[];
+	dataLinks: unknown[];
+	environmentParameters: unknown[];
+	externalReferences: ExternalReference[];
+	additionalInfo: AdditionalInfo;
+}
+
+/** BrAPI wire-format Service, describing one implemented call, as embedded in ServerInfo. */
+export interface BrapiService {
+	service: string;
+	methods: ('GET' | 'POST' | 'PUT' | 'DELETE')[];
+	versions: string[];
+	contentTypes: string[];
+}
+
+/** BrAPI wire-format ServerInfo, as returned by GET /serverinfo. */
+export interface BrapiServerInfo {
+	serverName?: string;
+	serverDescription?: string;
+	calls: BrapiService[];
+}

@@ -21,12 +21,11 @@ export interface ScaleValidValueCategory {
 
 export interface ScaleValidValues {
 	categories?: ScaleValidValueCategory[];
-	/** @deprecated use minimumValue */
-	min?: number;
-	/** @deprecated use maximumValue */
-	max?: number;
 	minimumValue?: string;
 	maximumValue?: string;
+	scaleDbId?: string;
+	scaleName?: string;
+	scalePUI?: string;
 }
 
 /** Shared shape of `ObservationUnitLevel` and `ObservationUnitLevelRelationship`. */
@@ -68,17 +67,13 @@ export interface EventDateRange {
 	endDate?: string;
 }
 
-export interface EventParameterValueByDate {
-	date?: string;
-	value?: string;
-}
-
 export interface EventParameter {
 	name?: string;
 	code?: string;
 	units?: string;
 	value?: string;
-	valuesByDate?: EventParameterValueByDate[];
+	/** One value per entry in the parent Event's `discreteDates`, in the same order. */
+	valuesByDate?: string[];
 	description?: string;
 	valueDescription?: string;
 }
