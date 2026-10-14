@@ -1,6 +1,6 @@
 /**
  * DEPRECATED. Do not use. Instead use Arctrl library for ARC RO Crate handling.
- * 
+ *
  * Types for the ARC (Annotated Research Context) RO-Crate format produced by
  * PLANTdataHUB/DataPLANT, derived from an example `ro-crate-metadata.json`'s
  * `@graph` array. Vocabulary is bioschemas.org + https://w3id.org/ro/terms/arc.
