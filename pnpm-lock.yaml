@@ -14,6 +14,9 @@ importers:
       '@tabler/icons-svelte-runes':
         specifier: ^3.46.0
         version: 3.46.0(svelte@5.56.8(@typescript-eslint/types@8.65.0))
+      svelte-grid:
+        specifier: ^5.1.2
+        version: 5.1.2
     devDependencies:
       '@better-auth/cli':
         specifier: ^1.4.21
@@ -269,6 +272,7 @@ packages:
 
   '@better-auth/cli@1.4.21':
     resolution: {integrity: sha512-bKEa8BupnZxNjLk9ZDntvgQGm5jogeE2wHdMbYifhet3GTyxgDi6pXoOK8+aqHYQGg1C3OALi9hVVWnrv7JJWQ==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     hasBin: true
 
   '@better-auth/core@1.4.21':
@@ -3236,6 +3240,9 @@ packages:
     peerDependenciesMeta:
       svelte:
         optional: true
+
+  svelte-grid@5.1.2:
+    resolution: {integrity: sha512-Suwgb+L3LALhTyA7z4vn87UOJ+xBY6EeKa6MdWqDv/lZOtQgIZ21ry/I6txIn9IC0p8of4AiOXupkSMcZ+DEug==}
 
   svelte@5.56.8:
     resolution: {integrity: sha512-PY8LOw7xP6c8IOiVqdo0sbbZVYhXRSfklOQLAUyGBKqjTX0wx/z4l/9J+PmBpmlLnxzEb1NqltxQ5/wZme/Cmg==}
@@ -6237,6 +6244,8 @@ snapshots:
       semver: 7.8.5
     optionalDependencies:
       svelte: 5.56.8(@typescript-eslint/types@8.65.0)
+
+  svelte-grid@5.1.2: {}
 
   svelte@5.56.8(@typescript-eslint/types@8.65.0):
     dependencies:
