@@ -70,30 +70,30 @@ export interface DonorInfo {
 
 /** MCPD (Multi-Crop Passport Descriptors) block, BrAPI `GermplasmMCPD`. */
 export interface GermplasmMcpd {
-	accessionNames?: string[];
-	accessionNumber?: string;
-	acquisitionDate?: string;
-	acquisitionSourceCode?: string;
-	alternateIDs?: string[];
-	ancestralData?: string;
-	biologicalStatusOfAccessionCode?: string;
-	breedingInstitutes?: Institute[];
-	collectingInfo?: CollectingInfo;
-	commonCropName?: string;
-	countryOfOrigin?: string;
-	donorInfo?: DonorInfo;
-	genus?: string;
-	germplasmDbId?: string;
-	germplasmPUI?: string;
-	instituteCode?: string;
-	mlsStatus?: string;
-	remarks?: string;
-	safetyDuplicateInstitutes?: Institute[];
-	species?: string;
-	speciesAuthority?: string;
-	storageTypeCodes?: StorageTypeCode[];
-	subtaxon?: string;
-	subtaxonAuthority?: string;
+	accessionNames?: string[] | null;
+	accessionNumber?: string | null;
+	acquisitionDate?: string | null;
+	acquisitionSourceCode?: string | null;
+	alternateIDs?: string[] | null;
+	ancestralData?: string | null;
+	biologicalStatusOfAccessionCode?: string | null;
+	breedingInstitutes?: Institute[] | null;
+	collectingInfo?: CollectingInfo | null;
+	commonCropName?: string | null;
+	countryOfOrigin?: string | null;
+	donorInfo?: DonorInfo | null;
+	genus?: string | null;
+	germplasmDbId?: string | null;
+	germplasmPUI?: string | null;
+	instituteCode?: string | null;
+	mlsStatus?: string | null;
+	remarks?: string | null;
+	safetyDuplicateInstitutes?: Institute[] | null;
+	species?: string | null;
+	speciesAuthority?: string | null;
+	storageTypeCodes?: StorageTypeCode[] | null;
+	subtaxon?: string | null;
+	subtaxonAuthority?: string | null;
 }
 
 export interface CrossAttribute {

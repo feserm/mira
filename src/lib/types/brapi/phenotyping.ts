@@ -12,7 +12,7 @@ import type {
 	event,
 	eventObservationUnit
 } from '$lib/server/db/schema/brapi/phenotyping';
-import type { GeoJSON } from './common';
+import type { ExternalReference, AdditionalInfo, GeoJSON } from './common';
 
 export interface ScaleValidValueCategory {
 	label?: string;
@@ -59,6 +59,31 @@ export interface ObservationUnitPosition {
 export interface ObservationTreatment {
 	factor?: string;
 	modality?: string;
+}
+
+/** BrAPI wire-format ObservationUnit, as returned by GET /observationunits. */
+export interface BrapiObservationUnit {
+	observationUnitDbId: string;
+	observationUnitName?: string | null;
+	observationUnitPUI?: string | null;
+	crossDbId?: string | null;
+	crossName?: string | null;
+	germplasmDbId?: string | null;
+	germplasmName?: string | null;
+	locationDbId?: string | null;
+	locationName?: string | null;
+	observationUnitPosition?: ObservationUnitPosition | null;
+	programDbId?: string | null;
+	programName?: string | null;
+	seedLotDbId?: string | null;
+	seedLotName?: string | null;
+	studyDbId?: string | null;
+	studyName?: string | null;
+	treatments: ObservationTreatment[];
+	trialDbId?: string | null;
+	trialName?: string | null;
+	externalReferences: ExternalReference[];
+	additionalInfo: AdditionalInfo;
 }
 
 export interface EventDateRange {

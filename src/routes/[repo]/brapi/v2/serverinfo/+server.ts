@@ -15,7 +15,14 @@ const CALLS: BrapiService[] = [
 		contentTypes: ['application/json']
 	},
 	{ service: 'trials', methods: ['GET'], versions: ['2.1'], contentTypes: ['application/json'] },
-	{ service: 'studies', methods: ['GET'], versions: ['2.1'], contentTypes: ['application/json'] }
+	{ service: 'studies', methods: ['GET'], versions: ['2.1'], contentTypes: ['application/json'] },
+	{ service: 'locations', methods: ['GET'], versions: ['2.1'], contentTypes: ['application/json'] },
+	{
+		service: 'observationunits',
+		methods: ['GET'],
+		versions: ['2.1'],
+		contentTypes: ['application/json']
+	}
 ];
 
 function parseContentType(param: string, value: string | null): string | undefined {
