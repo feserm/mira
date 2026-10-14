@@ -50,7 +50,7 @@ export async function runTransformStep(
 	rawRoCrate: unknown
 ): Promise<boolean> {
 	try {
-		transformRoCrate(rawRoCrate, arcId);
+		await transformRoCrate(rawRoCrate, arcId);
 		await db
 			.update(roCrateStaging)
 			.set({
@@ -76,7 +76,7 @@ export async function runLoadStep(
 	rawRoCrate: unknown
 ): Promise<boolean> {
 	try {
-		const result = transformRoCrate(rawRoCrate, arcId);
+		const result = await transformRoCrate(rawRoCrate, arcId);
 		await loadEntities(result);
 		await db
 			.update(roCrateStaging)

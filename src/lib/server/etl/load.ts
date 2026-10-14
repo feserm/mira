@@ -7,6 +7,8 @@ import {
 	trialContact,
 	study,
 	studyContact,
+	location,
+	germplasm,
 	crossingProject,
 	cross,
 	plannedCross,
@@ -19,7 +21,9 @@ import {
 	image,
 	event
 } from '$lib/server/db/schema';
-import type { NewContact } from '$lib/types/brapi/core';
+import type { NewContact, NewLocation } from '$lib/types/brapi/core';
+import type { NewGermplasm } from '$lib/types/brapi/germplasm';
+import type { NewObservationUnit } from '$lib/types/brapi/phenotyping';
 import type { TransformResult } from './transform';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -89,11 +93,57 @@ async function upsertContact(tx: Tx, row: NewContact): Promise<string> {
 }
 
 /**
+ * Locations are shared reference rows, not arc-scoped (like contacts): they dedupe globally
+ * on (name, instituteName), the unique constraint backing this table — there's no ORCID/email
+ * equivalent for a location, so that's the only tier. Studies hold their location via a plain
+ * `locationId` FK column (not a join table, since a study has at most one location), so this
+ * must resolve before the study row is built rather than linked afterward like study_contact.
+ */
+async function upsertLocation(tx: Tx, row: NewLocation): Promise<string> {
+	const [{ id }] = await tx
+		.insert(location)
+		.values(row)
+		.onConflictDoUpdate({
+			target: [location.name, location.instituteName],
+			set: conflictUpdateSet(location) as never
+		})
+		.returning({ id: location.id });
+	return id;
+}
+
+/**
+ * Germplasm is a shared reference row, not arc-scoped (like contact/location): the same
+ * accession can be reused across ARCs, so it dedupes globally on germplasmPui, the one
+ * MIAPPE-independent identifier transform.ts always fills in (falling back to a synthetic
+ * `${arcId}:${sourceId}` when the source data has no external reference id — see transform.ts).
+ */
+async function upsertGermplasm(tx: Tx, row: NewGermplasm): Promise<string> {
+	const [{ id }] = await tx
+		.insert(germplasm)
+		.values(row)
+		.onConflictDoUpdate({
+			target: germplasm.germplasmPui,
+			set: conflictUpdateSet(germplasm) as never
+		})
+		.returning({ id: germplasm.id });
+	return id;
+}
+
+/**
  * Persists a Transform stage result into the arc-scoped BrAPI tables, upserting on
  * (arc_id, source_id). Studies are attached to the ARC's single trial, and contacts
  * (globally deduped — see upsertContact) are linked to their owning trial or study via
- * trial_contact / study_contact. Other shared/reference entities (germplasm, location,
- * program, ...) are out of scope — see transform.ts for why.
+ * trial_contact / study_contact; locations (also globally deduped — see upsertLocation)
+ * are linked via study.locationId. Germplasm (also globally deduped — see upsertGermplasm) is
+ * upserted standalone. Observation units are linked to their owning study via studyId, resolved
+ * from result.studyObservationUnits now that studies have an id, to the germplasm they were
+ * sampled from via germplasmId, resolved from result.observationUnitGermplasm now that germplasm
+ * has an id, to the ARC's single trial via trialId, taken directly from trialId above (no link
+ * array needed, unlike studyId/germplasmId, since every observation unit belongs to the same one
+ * trial), and to a location via locationId, inherited from its study's location (looked up in
+ * locationIdByStudySourceId by the same studySourceId, since an observation unit has no location
+ * of its own in the source data). Other shared/reference entities (program, ...) are out of scope
+ * — see transform.ts for why.
  */
 export async function loadEntities(result: TransformResult): Promise<void> {
 	await db.transaction(async (tx) => {
@@ -118,10 +168,28 @@ export async function loadEntities(result: TransformResult): Promise<void> {
 				.onConflictDoNothing({ target: [trialContact.trialId, trialContact.contactId] });
 		}
 
+		// A NewLocation object is shared by reference between result.locations and its
+		// StudyLocationLink (see transform.ts), so a WeakMap keyed on that reference is enough
+		// to carry the upserted id from one to the other without a natural business key.
+		const locationIdByRow = new WeakMap<NewLocation, string>();
+		for (const locationRow of result.locations) {
+			locationIdByRow.set(locationRow, await upsertLocation(tx, locationRow));
+		}
+		const locationIdByStudySourceId = new Map(
+			result.studyLocations.map(({ studySourceId, location: locationRow }) => [
+				studySourceId,
+				locationIdByRow.get(locationRow)
+			])
+		);
+
 		const studyRows = await upsertArcScoped(
 			tx,
 			study,
-			result.studies.map((s) => ({ ...s, trialId }))
+			result.studies.map((s) => ({
+				...s,
+				trialId,
+				locationId: (s.sourceId && locationIdByStudySourceId.get(s.sourceId)) ?? null
+			}))
 		);
 		const studyIdBySourceId = new Map(studyRows.map((s) => [s.sourceId, s.id]));
 
@@ -137,14 +205,61 @@ export async function loadEntities(result: TransformResult): Promise<void> {
 				.onConflictDoNothing({ target: [studyContact.studyId, studyContact.contactId] });
 		}
 
-		await upsertArcScoped(tx, crossingProject, result.crossingProjects);
-		await upsertArcScoped(tx, cross, result.crosses);
-		await upsertArcScoped(tx, plannedCross, result.plannedCrosses);
-		await upsertArcScoped(tx, pedigreeNode, result.pedigreeNodes);
-		await upsertArcScoped(tx, seedLot, result.seedLots);
-		await upsertArcScoped(tx, seedLotTransaction, result.seedLotTransactions);
-		await upsertArcScoped(tx, germplasmAttributeValue, result.germplasmAttributeValues);
-		await upsertArcScoped(tx, observationUnit, result.observationUnits);
+		// A NewGermplasm object is shared by reference between result.germplasm and its
+		// ObservationUnitGermplasmLink entries (see transform.ts), same WeakMap-by-reference
+		// pattern as locationIdByRow above, since germplasm has no arc-scoped sourceId of its own
+		// to key a plain Map by (it dedupes globally on germplasmPui instead).
+		const germplasmIdByRow = new WeakMap<NewGermplasm, string>();
+		for (const germplasmRow of result.germplasm) {
+			germplasmIdByRow.set(germplasmRow, await upsertGermplasm(tx, germplasmRow));
+		}
+
+		// Studies are already upserted above, so (unlike study.locationId) each observation unit's
+		// studyId can be resolved directly off studyIdBySourceId -- the WeakMap here only carries
+		// that resolved id from result.studyObservationUnits (keyed by object reference, same as
+		// locationIdByRow above, since a NewObservationUnit row has no natural key of its own yet)
+		// across to the row itself just before insert.
+		const studyIdByObservationUnitRow = new WeakMap<NewObservationUnit, string>();
+		for (const { studySourceId, observationUnit: unitRow } of result.studyObservationUnits) {
+			const studyId = studyIdBySourceId.get(studySourceId);
+			if (!studyId) {
+				throw new Error(`Study "${studySourceId}" not found while linking its observation units`);
+			}
+			studyIdByObservationUnitRow.set(unitRow, studyId);
+		}
+		const germplasmIdByObservationUnitRow = new WeakMap<NewObservationUnit, string>();
+		for (const {
+			observationUnit: unitRow,
+			germplasm: germplasmRow
+		} of result.observationUnitGermplasm) {
+			const germplasmId = germplasmIdByRow.get(germplasmRow);
+			if (germplasmId) germplasmIdByObservationUnitRow.set(unitRow, germplasmId);
+		}
+
+		// Reuses locationIdByStudySourceId (built above for study.locationId) rather than
+		// re-deriving it from result.studyLocations -- an observation unit's location is just its
+		// study's location, so it only needs to be looked up via the same studySourceId already
+		// carried by result.studyObservationUnits.
+		const locationIdByObservationUnitRow = new WeakMap<NewObservationUnit, string>();
+		for (const { studySourceId, observationUnit: unitRow } of result.studyObservationUnits) {
+			const locationId = locationIdByStudySourceId.get(studySourceId);
+			if (locationId) locationIdByObservationUnitRow.set(unitRow, locationId);
+		}
+		await upsertArcScoped(
+			tx,
+			observationUnit,
+			result.observationUnits.map((row) => ({
+				...row,
+				studyId: studyIdByObservationUnitRow.get(row) ?? null,
+				germplasmId: germplasmIdByObservationUnitRow.get(row) ?? null,
+				// Every observation unit belongs to the ARC's single trial (exactly one trial per
+				// ARC by construction, same invariant the contacts/studies attachment above relies
+				// on), so trialId is just the trial upserted at the top of this transaction --
+				// unlike studyId/germplasmId, no per-row link array is needed to resolve it.
+				trialId: trialId ?? null,
+				locationId: locationIdByObservationUnitRow.get(row) ?? null
+			}))
+		);
 		await upsertArcScoped(tx, observation, result.observations);
 		await upsertArcScoped(tx, image, result.images);
 		await upsertArcScoped(tx, event, result.events);
