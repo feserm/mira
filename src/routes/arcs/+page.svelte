@@ -153,8 +153,8 @@
 											</div>
 										</div>
 										<div>
-											<div class="font-bold max-w-[25ch] truncate" title="{arc.name}">
-  												{arc.name}
+											<div class="max-w-[25ch] truncate font-bold" title={arc.name}>
+												{arc.name}
 											</div>
 											<div class="text-sm opacity-50">{arc.namespace.full_path}</div>
 										</div>
