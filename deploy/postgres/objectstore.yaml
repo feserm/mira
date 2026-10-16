@@ -1,0 +1,24 @@
+# Where WAL and base backups go (Barman Cloud plugin, not the deprecated in-tree barmanObjectStore).
+# Everything here is a placeholder: use your own S3-compatible endpoint and bucket.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: mira-pg-backups
+spec:
+  # Recovery window: any point in the last 30 days can be restored. Older base backups and the WAL
+  # they need are deleted by the plugin.
+  retentionPolicy: 30d
+  configuration:
+    destinationPath: s3://example-mira-pg-backups/
+    endpointURL: https://s3.example.org
+    s3Credentials:
+      accessKeyId:
+        name: mira-pg-backup-s3
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: mira-pg-backup-s3
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip

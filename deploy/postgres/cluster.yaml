@@ -1,0 +1,87 @@
+# The MIRA database cluster. Sizes and the storage class are placeholders to be set on staging;
+# the reasoning is in docs/infrastructure.md. Services created by the operator: mira-pg-rw (primary),
+# mira-pg-ro (replicas), mira-pg-r (any).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: mira-pg
+spec:
+  description: MIRA BrAPI server database
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.11-system-trixie
+  instances: 3
+  # Roll replicas first, then switch over the primary, without waiting for a human.
+  primaryUpdateStrategy: unsupervised
+
+  postgresql:
+    parameters:
+      # Budget in docs/infrastructure.md: about 61 connections at peak against 100.
+      max_connections: '100'
+      shared_buffers: 256MB
+    pg_hba:
+      # Refuse unencrypted connections to the application database. Rules are matched in order and
+      # this one sits before the operator's catch-all `host all all all scram-sha-256`.
+      - hostnossl mira all all reject
+
+  bootstrap:
+    initdb:
+      database: mira
+      # The migrator owns the database and every object in it. CloudNativePG generates the Secret
+      # mira-pg-app for this role (keys uri, username, password, host, ...).
+      owner: mira_migrator
+      # Creates the mira_dml group role, the grants and the default privileges (sql/roles.sql).
+      postInitApplicationSQLRefs:
+        configMapRefs:
+          - name: mira-pg-init-sql
+            key: roles.sql
+
+  managed:
+    roles:
+      # The role the web app and the worker log in with: DML only, through membership of mira_dml.
+      # The operator does NOT generate this Secret: create it (create-secrets.sh).
+      - name: mira_app
+        ensure: present
+        login: true
+        inRoles:
+          - mira_dml
+        connectionLimit: 80
+        passwordSecret:
+          name: mira-pg-app-role
+
+  storage:
+    # CHANGE_ME: a class that allows volume expansion.
+    storageClass: CHANGE_ME
+    size: 20Gi
+  walStorage:
+    storageClass: CHANGE_ME
+    size: 8Gi
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 1Gi
+
+  affinity:
+    # `required` needs at least three schedulable nodes; use it once the cluster has them.
+    podAntiAffinityType: preferred
+    topologyKey: kubernetes.io/hostname
+
+  certificates:
+    # The names a client may use for verify-full, on top of mira-pg-rw/-ro/-r (each also as .<namespace>,
+    # .<namespace>.svc and .svc.cluster.local). The pooler's service name is here so that the optional
+    # Pooler (optional/pooler.yaml) can be switched on without touching the certificate. Add the
+    # namespaced forms if a client lives in another namespace.
+    serverAltDNSNames:
+      - mira-pg-pooler-rw
+
+  # WAL archiving and base backups through the Barman Cloud plugin.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: mira-pg-backups
+
+  monitoring:
+    # Needs the Prometheus Operator CRDs; switch on together with the alert rules (S2.8).
+    enablePodMonitor: false

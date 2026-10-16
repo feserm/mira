@@ -1,0 +1,21 @@
+# Postgres for MIRA on CloudNativePG (S1.10). Apply into the application namespace:
+#   kubectl apply -k deploy/postgres -n mira
+# The operator, the Barman Cloud plugin and cert-manager are installed separately (README.md).
+# Create the Secrets first (create-secrets.sh). Nothing here contains a credential.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - objectstore.yaml
+  - cluster.yaml
+  - scheduled-backup.yaml
+
+configMapGenerator:
+  # The role/grant SQL run once at bootstrap (Cluster bootstrap.initdb.postInitApplicationSQLRefs).
+  # The name must stay fixed, because cluster.yaml refers to it, so the content hash suffix is off.
+  - name: mira-pg-init-sql
+    files:
+      - roles.sql=sql/roles.sql
+
+generatorOptions:
+  disableNameSuffixHash: true

@@ -1,0 +1,23 @@
+# OPTIONAL. Not part of the default kustomization: see docs/infrastructure.md section 5 for when to
+# add it. Apply with `kubectl apply -f deploy/postgres/optional/pooler.yaml -n mira`, then point
+# secrets.database at a DATABASE_URL whose host is mira-pg-pooler-rw. Never point the migration Job at it.
+# Tested locally with PgBouncer 1.25.1 (transaction mode): the worker, the queue claim and the web app work.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: mira-pg-pooler-rw
+spec:
+  cluster:
+    name: mira-pg
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    image: ghcr.io/cloudnative-pg/pgbouncer:1.25.1
+    parameters:
+      # Server connections per user/database pair, and the most clients the pooler accepts.
+      default_pool_size: '20'
+      max_client_conn: '500'
+      # Needed for postgres.js prepared statements in transaction mode (PgBouncer 1.21+). With 0, or
+      # with an older image, set DB_PREPARE=false on the app and the worker instead.
+      max_prepared_statements: '200'
