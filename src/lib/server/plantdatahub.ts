@@ -1,50 +1,28 @@
-import { error, type RequestEvent } from '@sveltejs/kit';
-import { desc, eq, and } from 'drizzle-orm';
+import { error } from '@sveltejs/kit';
 import { config } from '$lib/server/env';
-import { auth } from '$lib/server/auth';
-import { db } from '$lib/server/db';
-import { account } from '$lib/server/db/schema';
+import { fetchWithTimeout, type FetchLimits } from '$lib/server/fetch-timeout';
 import type { GitlabProjectDetail, GitlabProjectSummary, Pagination } from '$lib/types/gitlab';
 
 // PLANTdataHUB's OIDC issuer is the GitLab instance itself, so the same host
 // serves the REST API and the OIDC-derived access token doubles as a GitLab API token.
 const PLANTDATAHUB_URL = config.oidc.issuerUrl;
 
-export async function getAccessToken(event: RequestEvent): Promise<string> {
-	const userId = event.locals.user?.id;
-	if (!userId) error(401, 'Not signed in');
+/** Every PLANTdataHUB request goes through this, so none can hang. */
+export const plantdatahubLimits: FetchLimits = {
+	headersMs: config.http.headersTimeoutSeconds * 1000,
+	totalMs: config.http.totalTimeoutSeconds * 1000
+};
 
-	// A user can accumulate more than one linked 'oidc' account row (e.g. GitLab
-	// returning a different subject claim across logins). Without an explicit
-	// accountId, better-auth's own account lookup isn't ordered by recency and can
-	// select a stale row, so pick the most recently linked one ourselves.
-	const [oidcAccount] = await db
-		.select({ accountId: account.accountId })
-		.from(account)
-		.where(and(eq(account.userId, userId), eq(account.providerId, 'oidc')))
-		.orderBy(desc(account.updatedAt))
-		.limit(1);
-
-	if (!oidcAccount) {
-		error(403, 'No linked PLANTdataHUB account. Please log in again.');
-	}
-
-	const tokens = await auth.api.getAccessToken({
-		body: { providerId: 'oidc', accountId: oidcAccount.accountId },
-		headers: event.request.headers
-	});
-
-	if (!tokens?.accessToken) {
-		error(401, 'Could not obtain a PLANTdataHUB access token. Please log in again.');
-	}
-
-	return tokens.accessToken;
+export function plantdatahubFetch(url: string, token: string): Promise<Response> {
+	return fetchWithTimeout(
+		url,
+		{ headers: { Authorization: `Bearer ${token}` } },
+		plantdatahubLimits
+	);
 }
 
 async function gitlabFetch(path: string, token: string): Promise<Response> {
-	const res = await fetch(`${PLANTDATAHUB_URL}${path}`, {
-		headers: { Authorization: `Bearer ${token}` }
-	});
+	const res = await plantdatahubFetch(`${PLANTDATAHUB_URL}${path}`, token);
 
 	if (!res.ok) {
 		if (res.status === 401) {
@@ -53,10 +31,17 @@ async function gitlabFetch(path: string, token: string): Promise<Response> {
 				'PLANTdataHUB rejected the access token. Please log in again (read_api scope required).'
 			);
 		}
+		if (res.status === 403) {
+			error(403, 'PLANTdataHUB denied access to this resource');
+		}
 		if (res.status === 404) {
 			error(404, 'Not found on PLANTdataHUB');
 		}
-		error(502, `PLANTdataHUB API request failed (${res.status})`);
+		// 5xx and 429 are worth retrying (the ETL worker does); other 4xx are our own mistake.
+		error(
+			res.status >= 500 || res.status === 429 ? 502 : 500,
+			`PLANTdataHUB API request failed (${res.status})`
+		);
 	}
 
 	return res;

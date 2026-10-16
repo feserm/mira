@@ -20,6 +20,20 @@ export interface ServerConfig {
 		connectTimeoutSeconds?: number;
 		ssl?: DbSsl;
 	};
+	/** Timeouts for every outbound HTTP call (PLANTdataHUB). */
+	http: {
+		headersTimeoutSeconds: number;
+		totalTimeoutSeconds: number;
+	};
+	/** Background ETL worker (see docs/etl-worker.md). The web app only reads `maxAttempts`. */
+	etl: {
+		concurrency: number;
+		leaseSeconds: number;
+		pollSeconds: number;
+		maxAttempts: number;
+		retryDelaySeconds: number;
+		shutdownTimeoutSeconds: number;
+	};
 }
 
 export interface EnvValidation {
@@ -120,6 +134,14 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 		}
 	}
 
+	const headersTimeoutSeconds = integer('HTTP_HEADERS_TIMEOUT', 1) ?? 30;
+	const totalTimeoutSeconds = integer('HTTP_TIMEOUT', 1) ?? 300;
+	if (headersTimeoutSeconds > totalTimeoutSeconds) {
+		errors.push('HTTP_HEADERS_TIMEOUT must not be larger than HTTP_TIMEOUT');
+	}
+
+	const leaseSeconds = integer('ETL_LEASE_SECONDS', 10) ?? 60;
+
 	return {
 		errors,
 		config: {
@@ -132,7 +154,16 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 				clientSecret: get('OIDC_CLIENT_SECRET') || undefined,
 				scopes: (get('OIDC_SCOPES') || DEFAULT_SCOPES).split(/\s+/)
 			},
-			db: { poolMax, idleTimeoutSeconds, connectTimeoutSeconds, ssl }
+			db: { poolMax, idleTimeoutSeconds, connectTimeoutSeconds, ssl },
+			http: { headersTimeoutSeconds, totalTimeoutSeconds },
+			etl: {
+				concurrency: integer('ETL_CONCURRENCY', 1) ?? 1,
+				leaseSeconds,
+				pollSeconds: integer('ETL_POLL_SECONDS', 1) ?? 5,
+				maxAttempts: integer('ETL_MAX_ATTEMPTS', 1) ?? 3,
+				retryDelaySeconds: integer('ETL_RETRY_DELAY_SECONDS', 0) ?? 30,
+				shutdownTimeoutSeconds: integer('ETL_SHUTDOWN_TIMEOUT', 0) ?? 60
+			}
 		}
 	};
 }

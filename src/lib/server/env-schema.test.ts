@@ -39,6 +39,58 @@ describe('validateEnv', () => {
 		});
 	});
 
+	it('defaults the timeouts and the ETL worker settings', () => {
+		const { config, errors } = validateEnv(valid);
+		expect(errors).toEqual([]);
+		expect(config.http).toEqual({ headersTimeoutSeconds: 30, totalTimeoutSeconds: 300 });
+		expect(config.etl).toEqual({
+			concurrency: 1,
+			leaseSeconds: 60,
+			pollSeconds: 5,
+			maxAttempts: 3,
+			retryDelaySeconds: 30,
+			shutdownTimeoutSeconds: 60
+		});
+	});
+
+	it('parses the timeout and ETL worker settings', () => {
+		const { config, errors } = validateEnv({
+			...valid,
+			HTTP_HEADERS_TIMEOUT: '5',
+			HTTP_TIMEOUT: '20',
+			ETL_CONCURRENCY: '3',
+			ETL_LEASE_SECONDS: '30',
+			ETL_POLL_SECONDS: '2',
+			ETL_MAX_ATTEMPTS: '1',
+			ETL_RETRY_DELAY_SECONDS: '0',
+			ETL_SHUTDOWN_TIMEOUT: '10'
+		});
+		expect(errors).toEqual([]);
+		expect(config.http).toEqual({ headersTimeoutSeconds: 5, totalTimeoutSeconds: 20 });
+		expect(config.etl.concurrency).toBe(3);
+		expect(config.etl.leaseSeconds).toBe(30);
+		expect(config.etl.retryDelaySeconds).toBe(0);
+	});
+
+	it('rejects bad timeout and ETL worker settings, naming the variable', () => {
+		const { errors } = validateEnv({
+			...valid,
+			HTTP_HEADERS_TIMEOUT: '60',
+			HTTP_TIMEOUT: '10',
+			ETL_CONCURRENCY: '0',
+			ETL_LEASE_SECONDS: '5',
+			ETL_MAX_ATTEMPTS: 'many'
+		});
+		for (const name of [
+			'HTTP_HEADERS_TIMEOUT',
+			'ETL_CONCURRENCY',
+			'ETL_LEASE_SECONDS',
+			'ETL_MAX_ATTEMPTS'
+		]) {
+			expect(errors.some((e) => e.startsWith(name))).toBe(true);
+		}
+	});
+
 	it('maps DB_SSL=true to require and false to off', () => {
 		expect(validateEnv({ ...valid, DB_SSL: 'true' }).config.db.ssl).toBe('require');
 		expect(validateEnv({ ...valid, DB_SSL: 'false' }).config.db.ssl).toBeUndefined();

@@ -1,15 +1,12 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { error, fail, redirect, type RequestEvent } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { roCrateStaging } from '$lib/server/db/schema';
-import { getArc, getAccessToken } from '$lib/server/plantdatahub';
+import { config } from '$lib/server/env';
+import { getArc } from '$lib/server/plantdatahub';
+import { getAccessToken } from '$lib/server/plantdatahub-token';
 import { resolveArcId } from '$lib/server/brapi/arc';
-import {
-	resetDownstream,
-	runExtractStep,
-	runTransformStep,
-	runLoadStep
-} from '$lib/server/etl/pipeline';
+import { enqueue, type JobKind } from '$lib/server/etl/queue';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {
@@ -36,70 +33,55 @@ export const load: PageServerLoad = async (event) => {
 	return { arc, staging: staging ?? null, brapiRepo };
 };
 
+/** The ETL runs in the worker (docs/etl-worker.md). The actions only authenticate, check the
+ *  preconditions the buttons imply, queue a job and return; the page polls the job's state. */
+async function queueJob(event: RequestEvent, kind: JobKind) {
+	const user = event.locals.user;
+	if (!user) error(401, 'Not signed in');
+
+	const { created } = await enqueue(db, {
+		arcId: Number(event.params.id),
+		kind,
+		requestedBy: user.id,
+		maxAttempts: config.etl.maxAttempts
+	});
+	return {
+		success: true,
+		message: created
+			? 'Import queued.'
+			: 'An import of this ARC is already queued or running. Showing its progress.'
+	};
+}
+
+async function stagingStatus(arcId: number) {
+	const [row] = await db
+		.select({
+			extractStatus: roCrateStaging.extractStatus,
+			transformStatus: roCrateStaging.transformStatus
+		})
+		.from(roCrateStaging)
+		.where(eq(roCrateStaging.arcId, arcId));
+	return row;
+}
+
 export const actions: Actions = {
-	extract: async (event) => {
-		if (!event.locals.user) error(401, 'Not signed in');
-		const arcId = Number(event.params.id);
-
-		await resetDownstream(arcId, ['transform', 'load']);
-
-		if (!(await runExtractStep(event, arcId))) {
-			return fail(502, { message: 'Extracting the RO-Crate failed.' });
-		}
-
-		const [row] = await db
-			.select({ rawRoCrate: roCrateStaging.rawRoCrate })
-			.from(roCrateStaging)
-			.where(eq(roCrateStaging.arcId, arcId));
-
-		if (await runTransformStep(event, arcId, row.rawRoCrate)) {
-			await runLoadStep(event, arcId, row.rawRoCrate);
-		}
-
-		return { success: true, message: 'RO-Crate imported successfully.' };
-	},
+	extract: (event) => queueJob(event, 'full'),
 
 	transform: async (event) => {
 		if (!event.locals.user) error(401, 'Not signed in');
-		const arcId = Number(event.params.id);
-
-		const [row] = await db
-			.select({
-				rawRoCrate: roCrateStaging.rawRoCrate,
-				extractStatus: roCrateStaging.extractStatus
-			})
-			.from(roCrateStaging)
-			.where(eq(roCrateStaging.arcId, arcId));
-		if (!row || row.extractStatus !== 'success') {
+		const row = await stagingStatus(Number(event.params.id));
+		if (row?.extractStatus !== 'success') {
 			return fail(400, { message: 'Extract must succeed before transforming.' });
 		}
-
-		await resetDownstream(arcId, ['load']);
-
-		if (await runTransformStep(event, arcId, row.rawRoCrate)) {
-			await runLoadStep(event, arcId, row.rawRoCrate);
-		}
-
-		return { success: true, message: 'RO-Crate transformed successfully.' };
+		return queueJob(event, 'transform');
 	},
 
 	load: async (event) => {
 		if (!event.locals.user) error(401, 'Not signed in');
-		const arcId = Number(event.params.id);
-
-		const [row] = await db
-			.select({
-				rawRoCrate: roCrateStaging.rawRoCrate,
-				transformStatus: roCrateStaging.transformStatus
-			})
-			.from(roCrateStaging)
-			.where(eq(roCrateStaging.arcId, arcId));
-		if (!row || row.transformStatus !== 'success') {
+		const row = await stagingStatus(Number(event.params.id));
+		if (row?.transformStatus !== 'success') {
 			return fail(400, { message: 'Transform must succeed before loading.' });
 		}
-
-		await runLoadStep(event, arcId, row.rawRoCrate);
-
-		return { success: true, message: 'RO-Crate loaded successfully.' };
+		return queueJob(event, 'load');
 	}
 };

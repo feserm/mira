@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
-import { listArcs, getAccessToken } from '$lib/server/plantdatahub';
+import { listArcs } from '$lib/server/plantdatahub';
+import { getAccessToken } from '$lib/server/plantdatahub-token';
 import type { PageServerLoad } from './$types';
 
 const PER_PAGE = 24;

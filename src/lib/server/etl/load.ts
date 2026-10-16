@@ -18,6 +18,7 @@ import type { NewContact, NewLocation } from '$lib/types/brapi/core';
 import type { NewGermplasm } from '$lib/types/brapi/germplasm';
 import type { NewObservationUnit } from '$lib/types/brapi/phenotyping';
 import type { TransformResult } from './transform';
+import { lockArc } from './queue';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type ArcScopedTable = PgTable & { id: PgColumn; arcId: PgColumn; sourceId: PgColumn };
@@ -138,8 +139,11 @@ async function upsertGermplasm(tx: Tx, row: NewGermplasm): Promise<string> {
  * of its own in the source data). Other shared/reference entities (program, ...) are out of scope
  * — see transform.ts for why.
  */
-export async function loadEntities(result: TransformResult): Promise<void> {
+export async function loadEntities(result: TransformResult, arcId: number): Promise<void> {
 	await db.transaction(async (tx) => {
+		// One Load per ARC at a time, even if two workers briefly believe they own the same job.
+		await lockArc(tx, arcId);
+
 		const trialRows = await upsertArcScoped(tx, trial, result.trials);
 
 		// transformRoCrate emits investigation-level contacts and studies, which belong to

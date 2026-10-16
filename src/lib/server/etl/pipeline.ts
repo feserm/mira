@@ -1,14 +1,28 @@
-import { isHttpError, type RequestEvent } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { roCrateStaging } from '$lib/server/db/schema';
 import { extractRoCrate } from './extract';
 import { transformRoCrate } from './transform';
 import { loadEntities } from './load';
+import { errorMessage, isTransient } from './errors';
+import { markStagingStepFailed, type JobStep } from './queue';
 
-function errorMessage(e: unknown): string {
-	if (isHttpError(e)) return e.body.message;
-	return e instanceof Error ? e.message : String(e);
+/** What a step needs from its caller: who runs it, and how to get a PLANTdataHUB token. The token
+ *  is fetched lazily and only by Extract, so Transform and Load jobs never need one. */
+export interface StepContext {
+	userId: string;
+	getToken: () => Promise<string>;
+}
+
+export type StepResult = { ok: true } | { ok: false; error: string; transient: boolean };
+
+const OK: StepResult = { ok: true };
+
+/** Records the failure in `ro_crate_staging` (a no-op while no row exists yet) and reports it. */
+async function failed(e: unknown, step: JobStep, arcId: number): Promise<StepResult> {
+	const message = errorMessage(e);
+	await markStagingStepFailed(db, arcId, step, message);
+	return { ok: false, error: message, transient: isTransient(e) };
 }
 
 export async function resetDownstream(
@@ -31,24 +45,20 @@ export async function resetDownstream(
 	await db.update(roCrateStaging).set(set).where(eq(roCrateStaging.arcId, arcId));
 }
 
-export async function runExtractStep(event: RequestEvent, arcId: number): Promise<boolean> {
+export async function runExtractStep(ctx: StepContext, arcId: number): Promise<StepResult> {
 	try {
-		await extractRoCrate(event, arcId);
-		return true;
+		await extractRoCrate(await ctx.getToken(), ctx.userId, arcId);
+		return OK;
 	} catch (e) {
-		await db
-			.update(roCrateStaging)
-			.set({ extractStatus: 'failed', extractError: errorMessage(e) })
-			.where(eq(roCrateStaging.arcId, arcId));
-		return false;
+		return failed(e, 'extract', arcId);
 	}
 }
 
 export async function runTransformStep(
-	event: RequestEvent,
+	ctx: StepContext,
 	arcId: number,
 	rawRoCrate: unknown
-): Promise<boolean> {
+): Promise<StepResult> {
 	try {
 		await transformRoCrate(rawRoCrate, arcId);
 		await db
@@ -56,43 +66,35 @@ export async function runTransformStep(
 			.set({
 				transformStatus: 'success',
 				transformedAt: new Date(),
-				transformedBy: event.locals.user!.id,
+				transformedBy: ctx.userId,
 				transformError: null
 			})
 			.where(eq(roCrateStaging.arcId, arcId));
-		return true;
+		return OK;
 	} catch (e) {
-		await db
-			.update(roCrateStaging)
-			.set({ transformStatus: 'failed', transformError: errorMessage(e) })
-			.where(eq(roCrateStaging.arcId, arcId));
-		return false;
+		return failed(e, 'transform', arcId);
 	}
 }
 
 export async function runLoadStep(
-	event: RequestEvent,
+	ctx: StepContext,
 	arcId: number,
 	rawRoCrate: unknown
-): Promise<boolean> {
+): Promise<StepResult> {
 	try {
 		const result = await transformRoCrate(rawRoCrate, arcId);
-		await loadEntities(result);
+		await loadEntities(result, arcId);
 		await db
 			.update(roCrateStaging)
 			.set({
 				loadStatus: 'success',
 				loadedAt: new Date(),
-				loadedBy: event.locals.user!.id,
+				loadedBy: ctx.userId,
 				loadError: null
 			})
 			.where(eq(roCrateStaging.arcId, arcId));
-		return true;
+		return OK;
 	} catch (e) {
-		await db
-			.update(roCrateStaging)
-			.set({ loadStatus: 'failed', loadError: errorMessage(e) })
-			.where(eq(roCrateStaging.arcId, arcId));
-		return false;
+		return failed(e, 'load', arcId);
 	}
 }

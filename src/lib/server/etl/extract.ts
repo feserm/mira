@@ -1,22 +1,24 @@
-import { error, type RequestEvent } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { roCrateStaging } from '$lib/server/db/schema';
-import { getAccessToken, getArc, roCrateDownloadUrl } from '$lib/server/plantdatahub';
+import { getArc, plantdatahubFetch, roCrateDownloadUrl } from '$lib/server/plantdatahub';
 
-export async function extractRoCrate(event: RequestEvent, arcId: number): Promise<void> {
-	const token = await getAccessToken(event);
+export async function extractRoCrate(token: string, userId: string, arcId: number): Promise<void> {
 	const [project, res] = await Promise.all([
 		getArc(token, String(arcId)),
-		fetch(roCrateDownloadUrl(String(arcId)), {
-			headers: { Authorization: `Bearer ${token}` }
-		})
+		plantdatahubFetch(roCrateDownloadUrl(String(arcId)), token)
 	]);
 	if (!res.ok) {
-		error(res.status === 404 ? 404 : 502, 'Could not fetch RO-Crate metadata from PLANTdataHUB');
+		if (res.status === 401 || res.status === 403) {
+			error(res.status, 'PLANTdataHUB denied access to the RO-Crate metadata');
+		}
+		error(
+			res.status === 404 ? 404 : res.status >= 500 || res.status === 429 ? 502 : 500,
+			'Could not fetch RO-Crate metadata from PLANTdataHUB'
+		);
 	}
 
 	const raw = await res.json();
-	const userId = event.locals.user!.id;
 	const now = new Date();
 
 	await db
