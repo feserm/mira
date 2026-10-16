@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mira.fullname" . }}
+  labels:
+    {{- include "mira.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.containerPort | quote }}
+  ORIGIN: {{ include "mira.origin" . | quote }}
+  OIDC_ISSUER_URL: {{ required "config.oidc.issuerUrl is required" .Values.config.oidc.issuerUrl | quote }}
+  OIDC_CLIENT_ID: {{ required "config.oidc.clientId is required" .Values.config.oidc.clientId | quote }}
+  {{- with .Values.config.oidc.scopes }}
+  OIDC_SCOPES: {{ . | quote }}
+  {{- end }}
+  SHUTDOWN_TIMEOUT: {{ .Values.config.shutdownTimeout | quote }}
+  {{- with .Values.config.db.poolMax }}
+  DB_POOL_MAX: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.db.idleTimeout }}
+  DB_IDLE_TIMEOUT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.db.connectTimeout }}
+  DB_CONNECT_TIMEOUT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.db.ssl }}
+  DB_SSL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.proxy.protocolHeader }}
+  PROTOCOL_HEADER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.proxy.hostHeader }}
+  HOST_HEADER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.proxy.xffDepth }}
+  XFF_DEPTH: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.proxy.addressHeader }}
+  ADDRESS_HEADER: {{ . | quote }}
+  {{- end }}

@@ -1,0 +1,17 @@
+# Example values used by CI and in the README. All names are placeholders.
+image:
+  repository: ghcr.io/example-org/mira
+  tag: 0123456789abcdef0123456789abcdef01234567
+ingress:
+  host: mira.example.org
+config:
+  oidc:
+    issuerUrl: https://git.example.org
+    clientId: example-client-id
+secrets:
+  database:
+    name: mira-db
+  authSecret:
+    name: mira-auth
+  oidcClientSecret:
+    name: mira-oidc

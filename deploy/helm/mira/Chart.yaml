@@ -1,0 +1,8 @@
+apiVersion: v2
+name: mira
+description: MIRA, a BrAPI server for PLANTdataHUB ARCs (SvelteKit / adapter-node)
+type: application
+version: 0.1.0
+# Informational only: the image is selected with image.tag, which has no default.
+appVersion: '0.0.0'
+kubeVersion: '>=1.25.0-0'

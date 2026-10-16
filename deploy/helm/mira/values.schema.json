@@ -1,0 +1,117 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"type": "object",
+	"required": ["image", "secrets", "config"],
+	"properties": {
+		"replicaCount": { "type": "integer", "minimum": 1 },
+		"image": {
+			"type": "object",
+			"required": ["repository", "tag"],
+			"properties": {
+				"repository": { "type": "string", "minLength": 1 },
+				"tag": {
+					"type": "string",
+					"minLength": 1,
+					"description": "Full commit SHA published by CI. There is no latest tag."
+				},
+				"digest": { "type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$" },
+				"pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+			}
+		},
+		"secrets": {
+			"type": "object",
+			"required": ["database", "authSecret"],
+			"properties": {
+				"database": { "$ref": "#/definitions/requiredSecretRef" },
+				"authSecret": { "$ref": "#/definitions/requiredSecretRef" },
+				"oidcClientSecret": {
+					"type": "object",
+					"properties": {
+						"name": { "type": "string" },
+						"key": { "type": "string", "minLength": 1 }
+					}
+				}
+			}
+		},
+		"config": {
+			"type": "object",
+			"required": ["oidc"],
+			"properties": {
+				"origin": {
+					"type": "string",
+					"pattern": "^(https://[^/\\s]+)?$",
+					"description": "https://host, no path, no trailing slash"
+				},
+				"oidc": {
+					"type": "object",
+					"required": ["issuerUrl", "clientId"],
+					"properties": {
+						"issuerUrl": {
+							"type": "string",
+							"pattern": "^https?://[^\\s]+[^/\\s]$",
+							"description": "OIDC issuer (PLANTdataHUB) URL, no trailing slash"
+						},
+						"clientId": { "type": "string", "minLength": 1 },
+						"scopes": { "type": "string" }
+					}
+				},
+				"shutdownTimeout": { "type": "integer", "minimum": 1 }
+			}
+		},
+		"migration": {
+			"type": "object",
+			"properties": {
+				"enabled": { "type": "boolean" },
+				"databaseSecret": {
+					"type": "object",
+					"properties": {
+						"name": { "type": "string" },
+						"key": { "type": "string", "minLength": 1 }
+					}
+				},
+				"backoffLimit": { "type": "integer", "minimum": 0 },
+				"activeDeadlineSeconds": { "type": "integer", "minimum": 1 }
+			}
+		},
+		"ingress": {
+			"type": "object",
+			"properties": {
+				"enabled": { "type": "boolean" },
+				"host": { "type": "string", "pattern": "^[^/\\s:]*$" }
+			},
+			"if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+			"then": {
+				"required": ["host"],
+				"properties": { "host": { "type": "string", "minLength": 1 } }
+			}
+		}
+	},
+	"if": {
+		"properties": {
+			"ingress": { "properties": { "enabled": { "const": false } }, "required": ["enabled"] }
+		},
+		"required": ["ingress"]
+	},
+	"then": {
+		"properties": {
+			"config": {
+				"properties": { "origin": { "type": "string", "minLength": 1 } },
+				"required": ["origin"]
+			}
+		}
+	},
+	"definitions": {
+		"requiredSecretRef": {
+			"type": "object",
+			"required": ["name", "key"],
+			"properties": {
+				"name": {
+					"type": "string",
+					"minLength": 1,
+					"description": "Name of an existing Secret in the release namespace"
+				},
+				"key": { "type": "string", "minLength": 1 }
+			}
+		}
+	}
+}

@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mira.fullname" . }}
+  labels:
+    {{- include "mira.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.strategy.maxSurge }}
+      maxUnavailable: {{ .Values.strategy.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "mira.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Config changes roll the pods (envFrom is only read at container start).
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "mira.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mira.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ include "mira.terminationGracePeriodSeconds" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mira
+          image: {{ include "mira.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "mira.fullname" . }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.database "path" "secrets.database") | nindent 16 }}
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.authSecret "path" "secrets.authSecret") | nindent 16 }}
+            {{- if .Values.secrets.oidcClientSecret.name }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.oidcClientSecret "path" "secrets.oidcClientSecret") | nindent 16 }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if gt (int .Values.preStopSleepSeconds) 0 }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", {{ .Values.preStopSleepSeconds | quote }}]
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml .Values.probes.startup | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "mira.selectorLabels" . | nindent 14 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

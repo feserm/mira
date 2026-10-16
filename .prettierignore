@@ -8,3 +8,6 @@ bun.lockb
 # Miscellaneous
 /static/
 /drizzle/
+
+# Helm templates are not valid YAML until rendered
+/deploy/helm/*/templates/

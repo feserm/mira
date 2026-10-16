@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+{{- $host := required "ingress.host is required when ingress.enabled" .Values.ingress.host }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mira.fullname" . }}
+  labels:
+    {{- include "mira.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ default (printf "%s-tls" (include "mira.fullname" .)) .Values.ingress.tls.secretName | quote }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mira.fullname" . }}
+                port:
+                  name: http
+{{- end }}

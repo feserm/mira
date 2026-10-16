@@ -1,0 +1,31 @@
+MIRA {{ .Release.Name }} installed in namespace {{ .Release.Namespace }}.
+
+Public origin:  {{ include "mira.origin" . }}
+
+1. Register this redirect URI in the OIDC provider (PLANTdataHUB GitLab application):
+
+     {{ include "mira.origin" . }}/api/auth/oauth2/callback/oidc
+
+   Client id in use: {{ .Values.config.oidc.clientId }}
+   Scopes:           {{ .Values.config.oidc.scopes }}
+
+2. These Secrets must exist in namespace {{ .Release.Namespace }} (the chart never creates them):
+
+     {{ .Values.secrets.database.name }}  key {{ .Values.secrets.database.key }}  (app database URL)
+     {{ .Values.secrets.authSecret.name }}  key {{ .Values.secrets.authSecret.key }}  (>= 32 chars)
+{{- if .Values.secrets.oidcClientSecret.name }}
+     {{ .Values.secrets.oidcClientSecret.name }}  key {{ .Values.secrets.oidcClientSecret.key }}  (OIDC client secret)
+{{- else }}
+     (no OIDC client secret configured: the app runs as a public PKCE client)
+{{- end }}
+{{- if .Values.migration.enabled }}
+     {{ default .Values.secrets.database.name .Values.migration.databaseSecret.name }}  key {{ if .Values.migration.databaseSecret.name }}{{ .Values.migration.databaseSecret.key }}{{ else }}{{ .Values.secrets.database.key }}{{ end }}  (migration Job, needs DDL rights)
+{{- end }}
+
+3. Check the rollout:
+
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "mira.fullname" . }}
+     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "mira.fullname" . }}
+
+   A pod in CrashLoopBackOff with "Invalid server configuration" in its log means a required
+   setting or Secret value is missing or malformed.

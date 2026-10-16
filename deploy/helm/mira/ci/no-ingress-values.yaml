@@ -1,0 +1,8 @@
+ingress:
+  enabled: false
+config:
+  origin: https://mira.example.org
+migration:
+  databaseSecret:
+    name: mira-migrator
+    key: uri

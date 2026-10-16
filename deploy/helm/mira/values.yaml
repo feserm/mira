@@ -1,0 +1,204 @@
+# Default values for the MIRA chart. See README.md for prerequisites and a complete install command.
+#
+# Values with no usable default (image.tag, the secret names, and ingress.host or config.origin)
+# are rejected by values.schema.json, so a bad install fails at `helm template` / `helm install`.
+
+replicaCount: 2
+
+image:
+  # Placeholder: set to the repository CI pushes to (ghcr.io/<owner>/mira unless IMAGE_NAME is set).
+  repository: ghcr.io/example-org/mira
+  # REQUIRED. The full 40-hex commit SHA. CI publishes no `latest` tag, so there is no default.
+  tag: ''
+  # Optional. If set, the image is pulled as <repository>:<tag>@<digest> (the digest wins).
+  digest: ''
+  pullPolicy: IfNotPresent
+
+# Pull secrets must already exist in the namespace, e.g. [{ name: ghcr-pull }].
+imagePullSecrets: []
+
+nameOverride: ''
+fullnameOverride: ''
+
+serviceAccount:
+  # The app needs no Kubernetes API access and no RBAC; token automount is off either way.
+  create: false
+  name: ''
+  annotations: {}
+  # NOTE: the migration Job never uses this ServiceAccount. See migration.serviceAccountName.
+
+# --- Application configuration (non-secret) ------------------------------------------------------
+config:
+  # Public origin: https://host, no path, no trailing slash. Empty = https://<ingress.host>.
+  # It drives the OIDC redirect URI, cookie flags and SvelteKit's CSRF origin check.
+  #
+  # What the proxy settings below actually do (read from @sveltejs/adapter-node):
+  #   * adapter-node builds the request URL as `ORIGIN || (PROTOCOL_HEADER + HOST_HEADER or Host)`.
+  #     With ORIGIN set (this chart always sets it) PROTOCOL_HEADER and HOST_HEADER are IGNORED,
+  #     so X-Forwarded-Proto/Host do not matter for login or CSRF. They are set anyway as a
+  #     harmless safety net, in case ORIGIN is ever removed.
+  #   * ADDRESS_HEADER/XFF_DEPTH only change the client IP (getClientAddress). MIRA never calls it,
+  #     so ADDRESS_HEADER is left unset: setting it makes getClientAddress throw for requests
+  #     that did not come through the proxy (e.g. kubelet probes).
+  #   * Only trust the headers when the proxy overwrites them (ingress-nginx does by default,
+  #     unless `use-forwarded-headers` is enabled and an untrusted hop sits in front of it).
+  origin: ''
+
+  oidc:
+    # REQUIRED. The PLANTdataHUB (GitLab) base URL, no trailing slash. Not secret.
+    issuerUrl: ''
+    # REQUIRED. The OAuth application id registered for <origin>. Not secret.
+    clientId: ''
+    # Space separated. The token is reused against GitLab's REST API (listing and downloading ARCs),
+    # so the default of the app (`openid profile email`) is not enough. S1.8 confirms the minimum;
+    # use `openid profile email api` if read_api turns out not to be enough.
+    scopes: openid profile email read_api
+
+  db:
+    # Connections per pod (app default 10). Total = replicas x poolMax: keep it below max_connections.
+    poolMax: 10
+    idleTimeout: '' # seconds; empty = app default (never)
+    connectTimeout: '' # seconds; empty = app default (30)
+    ssl: '' # true|require|allow|prefer|verify-full; empty = off. Applies to the app and the migrator.
+
+  # adapter-node drains in-flight requests for this long after SIGTERM (seconds). The pod's
+  # terminationGracePeriodSeconds is derived from it.
+  shutdownTimeout: 30
+
+  proxy:
+    protocolHeader: x-forwarded-proto
+    hostHeader: x-forwarded-host
+    xffDepth: 1
+    addressHeader: '' # see the note above before setting this
+
+# Extra environment variables for the app container (list of EnvVar objects), e.g. NODE_EXTRA_CA_CERTS.
+extraEnv: []
+
+# --- Secrets (never created by this chart) -------------------------------------------------------
+# Reference Secrets that already exist in the namespace: by name and key. The chart holds no values.
+secrets:
+  # REQUIRED. Role with DML rights only (S1.10), or the owner role until then.
+  database:
+    name: ''
+    key: DATABASE_URL
+  # REQUIRED. At least 32 characters.
+  authSecret:
+    name: ''
+    key: BETTER_AUTH_SECRET
+  # Optional. Leave name empty for a public (PKCE only) client.
+  oidcClientSecret:
+    name: ''
+    key: OIDC_CLIENT_SECRET
+
+# --- Migrations ----------------------------------------------------------------------------------
+migration:
+  # Helm pre-install,pre-upgrade hook Job running `node migrate.js` from the same image.
+  # Set to false only if migrations are applied some other way.
+  enabled: true
+  # Secret holding the DATABASE_URL of a DDL-capable role. Empty = use secrets.database.
+  # S1.10 gives the migrator its own role while the app role has DML only.
+  databaseSecret:
+    name: ''
+    key: DATABASE_URL
+  # Hooks run BEFORE the chart's own resources exist on install, so the Job must not depend on any
+  # of them. It runs as this pre-existing ServiceAccount (empty = the namespace's `default`).
+  serviceAccountName: ''
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# --- Workload ------------------------------------------------------------------------------------
+containerPort: 3000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 384Mi
+  limits:
+    # No CPU limit by default (throttling hurts Node's event loop); the memory limit protects the node.
+    # Transform of a large ARC (arctrl) is the memory-hungry part: raise this if pods are OOMKilled.
+    memory: 1Gi
+
+probes:
+  # Port 3000 is reached directly by the kubelet, so no Host/forwarded headers are involved.
+  startup:
+    periodSeconds: 2
+    failureThreshold: 30 # up to 60 s to boot
+    timeoutSeconds: 2
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+    timeoutSeconds: 2
+  readiness:
+    periodSeconds: 10
+    failureThreshold: 3
+    timeoutSeconds: 4 # /readyz itself waits at most 2 s for the database
+
+# Seconds to sleep before SIGTERM so the ingress controller stops sending traffic first.
+# 0 disables the preStop hook. Uses `sleep` from the image.
+preStopSleepSeconds: 5
+# Empty = preStopSleepSeconds + config.shutdownTimeout + 10 (3 s log flush + 5 s pool close + slack).
+terminationGracePeriodSeconds: ''
+
+strategy:
+  maxSurge: 1
+  maxUnavailable: 0
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# Soft spread over nodes (ScheduleAnyway), so a small cluster can still schedule every replica.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: ScheduleAnyway
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}
+
+podDisruptionBudget:
+  # Only rendered when replicaCount > 1, so it can never block draining a single-replica install.
+  enabled: true
+  maxUnavailable: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  # REQUIRED when ingress.enabled: the public host name (no scheme).
+  host: ''
+  annotations:
+    # Imports (Extract, Transform, Load) run inside one HTTP request until S1.11 moves them to a
+    # worker, and large ARCs take minutes: raise ingress-nginx's 60 s default. Remove once S1.11 lands.
+    # These two annotations are specific to ingress-nginx; with another controller replace the map.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '300'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '300'
+    # ingress-nginx sets X-Forwarded-Proto/Host/For itself (overwriting client-sent values) unless
+    # `use-forwarded-headers` is enabled in its ConfigMap, so nothing is needed here.
+    # cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    # Empty = <release>-mira-tls. The Secret is created by cert-manager or by you.
+    secretName: ''
