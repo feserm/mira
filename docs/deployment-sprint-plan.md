@@ -103,7 +103,7 @@ Order: A and D (and E) in parallel, then B, then C.
 | [x]  | S1.4  |
 | [x]  | S1.5  |
 | [x]  | S1.6  |
-| [ ]  | S1.7  |
+| [x]  | S1.7  |
 | [ ]  | S1.8  |
 | [x]  | S1.9  |
 | [ ]  | S1.10 |
@@ -137,6 +137,17 @@ Also read by adapter-node (not validated by MIRA): `PORT`, `HOST`, `PROTOCOL_HEA
 - **App container:** default `CMD ["node", "build"]`, working directory `/app`, port 3000, UID/GID 1000 (`runAsNonRoot` works), writes nothing to disk (`readOnlyRootFilesystem: true`, no `/tmp` volume needed).
 - **Migration:** same image, `command: ["node", "migrate.js"]`, working directory `/app` (the image default; or set `MIGRATIONS_FOLDER`). Needs only `DATABASE_URL` (optional `DB_SSL`), not `ORIGIN` or the auth secrets. Prints one `migrate: applied <tag>` line per migration; a second run is a no-op; exit 1 on failure. Run as a pre-install/pre-upgrade Job or initContainer, never at app boot.
 - **Build facts:** `pnpm build` and `pnpm build:migrate` need no env vars; `pnpm check` is `scripts/check.mjs` (ignores third-party diagnostics in `node_modules`, `check:raw` is the plain command); `pnpm audit --prod --audit-level high` passes thanks to `overrides` in `pnpm-workspace.yaml`.
+
+**Chart as implemented in session C** (details in [deploy/helm/mira/README.md](../deploy/helm/mira/README.md)):
+
+- **Path:** `deploy/helm/mira` (plain Helm, no subcharts, no Postgres). Example values for CI and the README: `deploy/helm/mira/ci/*.yaml`. CI job `chart` runs `helm lint`, `helm template` and `kubeconform -strict` on them.
+- **Required values** (no defaults; `values.schema.json` rejects the install otherwise): `image.tag` (40-hex commit SHA), `ingress.host` (or `ingress.enabled=false` plus `config.origin`), `config.oidc.issuerUrl`, `config.oidc.clientId`, `secrets.database.name`, `secrets.authSecret.name`.
+- **Secrets** (must pre-exist in the namespace; the chart creates none): `secrets.database` (default key `DATABASE_URL`), `secrets.authSecret` (default key `BETTER_AUTH_SECRET`), optional `secrets.oidcClientSecret` (default key `OIDC_CLIENT_SECRET`, empty name = public client), optional `migration.databaseSecret` (default key `DATABASE_URL`; empty name = reuse `secrets.database`). For a CloudNativePG Secret use key `uri`.
+- **Migration:** hook Job `<release>-mira-migrate`, `pre-install,pre-upgrade`, `node migrate.js`. It runs as a pre-existing ServiceAccount (`migration.serviceAccountName`, default `default`) and reads no ConfigMap, because hooks run before chart resources exist. `helm rollback` runs no migration and migrations are forward-only.
+- **ORIGIN** is `https://<ingress.host>` unless `config.origin` is set. Verified against the image: with `ORIGIN` set, adapter-node ignores `PROTOCOL_HEADER`/`HOST_HEADER`; they are set only as a safety net. `ADDRESS_HEADER` is unset on purpose (the app never reads the client IP).
+- **Redirect URI** to register (also in `NOTES.txt`): `<ORIGIN>/api/auth/oauth2/callback/oidc`.
+- **Defaults to review in S1.8:** `config.oidc.scopes` is `openid profile email read_api` (the app's own default has no GitLab API scope).
+- **Not verified (needs a cluster):** ingress headers end to end, hook ordering, PDB and rollout behaviour under load, a CloudNativePG Secret's real key names.
 
 **Sprint 1 exit demo:** `helm install` into an empty namespace, log in with OIDC, import a real ARC, `curl` a BrAPI endpoint, roll the deployment, and nothing is lost.
 
