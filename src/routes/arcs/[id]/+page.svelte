@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { invalidateAll } from '$app/navigation';
 	import { visibilityBadgeClass } from '$lib/utils/gitlab';
 	import PipelineSteps from '$lib/components/etl/PipelineSteps.svelte';
+	import JobStatus from '$lib/components/etl/JobStatus.svelte';
+	import type { JobView } from '$lib/types/etl';
 	import IconX from '@tabler/icons-svelte-runes/icons/x';
 	import type { PageProps } from './$types';
 
@@ -10,6 +13,29 @@
 	let dismissedAlertKey: string | undefined = $state(undefined);
 	let alertKey = $derived(form ? `${form.success ?? false}:${form.message ?? ''}` : undefined);
 	let showAlert = $derived(!!alertKey && alertKey !== dismissedAlertKey);
+
+	// The import runs in a background worker. Polling happens only while a job is queued or running;
+	// when it ends, reload the page data once so the step statuses are current.
+	const POLL_MS = 2000;
+	const isActive = (j: JobView | null) => j?.state === 'queued' || j?.state === 'running';
+	let job = $derived(data.job);
+	let active = $derived(isActive(job));
+
+	$effect(() => {
+		if (!active) return;
+		const timer = setInterval(async () => {
+			try {
+				const res = await fetch(resolve('/arcs/[id]/job', { id: String(data.arc.id) }));
+				if (!res.ok) return;
+				const body: { job: JobView | null } = await res.json();
+				job = body.job;
+				if (!isActive(body.job)) await invalidateAll();
+			} catch {
+				// A failed poll (e.g. a pod restart) is retried on the next tick.
+			}
+		}, POLL_MS);
+		return () => clearInterval(timer);
+	});
 
 	function dismissAlert() {
 		dismissedAlertKey = alertKey;
@@ -112,7 +138,8 @@
 				{/if}
 			</div>
 
-			<PipelineSteps staging={data.staging} />
+			<JobStatus {job} />
+			<PipelineSteps staging={data.staging} busy={active} />
 
 			{#if data.brapiRepo}
 				<a

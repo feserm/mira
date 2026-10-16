@@ -6,7 +6,8 @@ import { config } from '$lib/server/env';
 import { getArc } from '$lib/server/plantdatahub';
 import { getAccessToken } from '$lib/server/plantdatahub-token';
 import { resolveArcId } from '$lib/server/brapi/arc';
-import { enqueue, type JobKind } from '$lib/server/etl/queue';
+import { enqueue, getLatestJob, type JobKind } from '$lib/server/etl/queue';
+import { toJobView } from '$lib/server/etl/job-view';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {
@@ -15,12 +16,13 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const token = await getAccessToken(event);
-	const [arc, [staging]] = await Promise.all([
+	const [arc, [staging], job] = await Promise.all([
 		getArc(token, event.params.id),
 		db
 			.select()
 			.from(roCrateStaging)
-			.where(eq(roCrateStaging.arcId, Number(event.params.id)))
+			.where(eq(roCrateStaging.arcId, Number(event.params.id))),
+		getLatestJob(db, Number(event.params.id))
 	]);
 
 	// The BrAPI routes are addressed by GitLab project path rather than arcId, so only
@@ -30,7 +32,7 @@ export const load: PageServerLoad = async (event) => {
 		.then(() => arc.path)
 		.catch(() => null);
 
-	return { arc, staging: staging ?? null, brapiRepo };
+	return { arc, staging: staging ?? null, brapiRepo, job: toJobView(job) };
 };
 
 /** The ETL runs in the worker (docs/etl-worker.md). The actions only authenticate, check the

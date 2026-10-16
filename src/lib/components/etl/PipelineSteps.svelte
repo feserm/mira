@@ -19,7 +19,8 @@
 		loadError: string | null;
 	}
 
-	let { staging }: { staging: StagingRow | null } = $props();
+	/** `busy`: an import job is queued or running, so the buttons are disabled. */
+	let { staging, busy = false }: { staging: StagingRow | null; busy?: boolean } = $props();
 
 	type StepKey = 'extract' | 'transform' | 'load';
 
@@ -107,7 +108,7 @@
 							<button
 								type="submit"
 								class="btn btn-ghost btn-xs"
-								disabled={!step.enabled || submitting[step.key]}
+								disabled={!step.enabled || submitting[step.key] || busy}
 								aria-label={i === 0 && step.status === 'pending'
 									? 'Import RO-Crate'
 									: `Re-run ${step.label}`}
