@@ -5,6 +5,10 @@ import { auth } from '$lib/server/auth';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { enqueueRequestLog } from '$lib/server/db/request-logs';
 
+// Probe paths bypass session lookup and request logging: kubelet sends no cookies and must not
+// write a request_logs row every few seconds.
+const PROBE_PATHS = new Set(['/healthz', '/readyz']);
+
 const BRAPI_PATH = /^\/[^/]+\/brapi\/v2(?:\/|$)/;
 
 const handleBetterAuth: Handle = async ({ event, resolve }) => {
@@ -19,6 +23,8 @@ const handleBetterAuth: Handle = async ({ event, resolve }) => {
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
+	if (PROBE_PATHS.has(event.url.pathname)) return resolve(event);
+
 	if (!BRAPI_PATH.test(event.url.pathname)) return handleBetterAuth({ event, resolve });
 
 	const startedAt = performance.now();
