@@ -1,0 +1,13 @@
+{{- if and .Values.worker.enabled .Values.worker.podDisruptionBudget.enabled (gt (int .Values.worker.replicas) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mira.fullname" . }}-worker
+  labels:
+    {{- include "mira.workerLabels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.worker.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "mira.workerSelectorLabels" . | nindent 6 }}
+{{- end }}

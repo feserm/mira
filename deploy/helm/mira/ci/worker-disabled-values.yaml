@@ -1,0 +1,3 @@
+# The worker Deployment turned off (e.g. imports run in a separate release).
+worker:
+  enabled: false

@@ -34,6 +34,19 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/component: web
 {{- end }}
 
+{{/* Labels of the worker objects. */}}
+{{- define "mira.workerLabels" -}}
+{{ include "mira.baseLabels" . }}
+app.kubernetes.io/component: worker
+{{- end }}
+
+{{/* Immutable selector labels of the worker Deployment. Takes the root context. */}}
+{{- define "mira.workerSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "mira.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: worker
+{{- end }}
+
 {{/* Immutable selector labels of the web Deployment and Service. Takes the root context. */}}
 {{- define "mira.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "mira.name" . }}
@@ -83,4 +96,14 @@ app.kubernetes.io/component: web
 secretKeyRef:
   name: {{ required (printf "%s.name is required (an existing Secret)" .path) .ref.name | quote }}
   key: {{ required (printf "%s.key is required" .path) .ref.key | quote }}
+{{- end }}
+
+{{/* Time a stopping worker gets: it waits worker.shutdownTimeoutSeconds for the running job, then
+     hands it back and closes the pool (5 s bound), plus slack. */}}
+{{- define "mira.workerTerminationGracePeriodSeconds" -}}
+{{- if .Values.worker.terminationGracePeriodSeconds -}}
+{{- .Values.worker.terminationGracePeriodSeconds -}}
+{{- else -}}
+{{- add (int .Values.worker.shutdownTimeoutSeconds) 15 -}}
+{{- end -}}
 {{- end }}

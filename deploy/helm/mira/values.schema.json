@@ -3,32 +3,52 @@
 	"type": "object",
 	"required": ["image", "secrets", "config"],
 	"properties": {
-		"replicaCount": { "type": "integer", "minimum": 1 },
+		"replicaCount": {
+			"type": "integer",
+			"minimum": 1
+		},
 		"image": {
 			"type": "object",
 			"required": ["repository", "tag"],
 			"properties": {
-				"repository": { "type": "string", "minLength": 1 },
+				"repository": {
+					"type": "string",
+					"minLength": 1
+				},
 				"tag": {
 					"type": "string",
 					"minLength": 1,
 					"description": "Full commit SHA published by CI. There is no latest tag."
 				},
-				"digest": { "type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$" },
-				"pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+				"digest": {
+					"type": "string",
+					"pattern": "^(sha256:[0-9a-f]{64})?$"
+				},
+				"pullPolicy": {
+					"enum": ["Always", "IfNotPresent", "Never"]
+				}
 			}
 		},
 		"secrets": {
 			"type": "object",
 			"required": ["database", "authSecret"],
 			"properties": {
-				"database": { "$ref": "#/definitions/requiredSecretRef" },
-				"authSecret": { "$ref": "#/definitions/requiredSecretRef" },
+				"database": {
+					"$ref": "#/definitions/requiredSecretRef"
+				},
+				"authSecret": {
+					"$ref": "#/definitions/requiredSecretRef"
+				},
 				"oidcClientSecret": {
 					"type": "object",
 					"properties": {
-						"name": { "type": "string" },
-						"key": { "type": "string", "minLength": 1 }
+						"name": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string",
+							"minLength": 1
+						}
 					}
 				}
 			}
@@ -51,51 +71,173 @@
 							"pattern": "^https?://[^\\s]+[^/\\s]$",
 							"description": "OIDC issuer (PLANTdataHUB) URL, no trailing slash"
 						},
-						"clientId": { "type": "string", "minLength": 1 },
-						"scopes": { "type": "string" }
+						"clientId": {
+							"type": "string",
+							"minLength": 1
+						},
+						"scopes": {
+							"type": "string"
+						}
 					}
 				},
-				"shutdownTimeout": { "type": "integer", "minimum": 1 }
+				"shutdownTimeout": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"http": {
+					"type": "object",
+					"properties": {
+						"headersTimeout": {
+							"type": ["integer", "string"],
+							"pattern": "^[0-9]*$",
+							"minimum": 1
+						},
+						"timeout": {
+							"type": ["integer", "string"],
+							"pattern": "^[0-9]*$",
+							"minimum": 1
+						}
+					}
+				},
+				"etl": {
+					"type": "object",
+					"properties": {
+						"maxAttempts": {
+							"type": "integer",
+							"minimum": 1
+						},
+						"retryDelaySeconds": {
+							"type": "integer",
+							"minimum": 0
+						}
+					}
+				}
 			}
 		},
 		"migration": {
 			"type": "object",
 			"properties": {
-				"enabled": { "type": "boolean" },
+				"enabled": {
+					"type": "boolean"
+				},
 				"databaseSecret": {
 					"type": "object",
 					"properties": {
-						"name": { "type": "string" },
-						"key": { "type": "string", "minLength": 1 }
+						"name": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string",
+							"minLength": 1
+						}
 					}
 				},
-				"backoffLimit": { "type": "integer", "minimum": 0 },
-				"activeDeadlineSeconds": { "type": "integer", "minimum": 1 }
+				"backoffLimit": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"activeDeadlineSeconds": {
+					"type": "integer",
+					"minimum": 1
+				}
 			}
 		},
 		"ingress": {
 			"type": "object",
 			"properties": {
-				"enabled": { "type": "boolean" },
-				"host": { "type": "string", "pattern": "^[^/\\s:]*$" }
+				"enabled": {
+					"type": "boolean"
+				},
+				"host": {
+					"type": "string",
+					"pattern": "^[^/\\s:]*$"
+				}
 			},
-			"if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+			"if": {
+				"properties": {
+					"enabled": {
+						"const": true
+					}
+				},
+				"required": ["enabled"]
+			},
 			"then": {
 				"required": ["host"],
-				"properties": { "host": { "type": "string", "minLength": 1 } }
+				"properties": {
+					"host": {
+						"type": "string",
+						"minLength": 1
+					}
+				}
+			}
+		},
+		"worker": {
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"type": "boolean"
+				},
+				"replicas": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"concurrency": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"leaseSeconds": {
+					"type": "integer",
+					"minimum": 10
+				},
+				"pollSeconds": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"shutdownTimeoutSeconds": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"terminationGracePeriodSeconds": {
+					"type": ["integer", "string"],
+					"pattern": "^[0-9]*$"
+				},
+				"podDisruptionBudget": {
+					"type": "object",
+					"properties": {
+						"enabled": {
+							"type": "boolean"
+						},
+						"maxUnavailable": {
+							"type": "integer",
+							"minimum": 1
+						}
+					}
+				}
 			}
 		}
 	},
 	"if": {
 		"properties": {
-			"ingress": { "properties": { "enabled": { "const": false } }, "required": ["enabled"] }
+			"ingress": {
+				"properties": {
+					"enabled": {
+						"const": false
+					}
+				},
+				"required": ["enabled"]
+			}
 		},
 		"required": ["ingress"]
 	},
 	"then": {
 		"properties": {
 			"config": {
-				"properties": { "origin": { "type": "string", "minLength": 1 } },
+				"properties": {
+					"origin": {
+						"type": "string",
+						"minLength": 1
+					}
+				},
 				"required": ["origin"]
 			}
 		}
@@ -110,7 +252,10 @@
 					"minLength": 1,
 					"description": "Name of an existing Secret in the release namespace"
 				},
-				"key": { "type": "string", "minLength": 1 }
+				"key": {
+					"type": "string",
+					"minLength": 1
+				}
 			}
 		}
 	}

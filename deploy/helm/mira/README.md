@@ -1,6 +1,6 @@
 # MIRA Helm chart
 
-Deploys the MIRA web app (SvelteKit / adapter-node) with a migration Job. Plain Helm, no
+Deploys the MIRA web app (SvelteKit / adapter-node), an ETL worker and a migration Job. Plain Helm, no
 subcharts. Postgres is not included. Image and migration details: [docker.md](../../../docs/docker.md),
 [migrations.md](../../../docs/migrations.md).
 
@@ -89,15 +89,41 @@ shows it again.
   `HOST_HEADER`. The chart sets them anyway, and `XFF_DEPTH`, as a safety net. `ADDRESS_HEADER` stays
   unset because the app never reads the client IP. Details are in the `values.yaml` comments.
   ingress-nginx passes `X-Forwarded-Proto/Host` itself, so the ingress needs no extra annotation.
-- **Imports are slow.** The ingress sets `proxy-read-timeout`/`proxy-send-timeout` to 300 s because
-  Extract/Transform/Load currently run inside one HTTP request. Remove this once S1.11 (background
-  worker) lands.
+- **Imports run in the worker**, not in the HTTP request (S1.11), so the ingress needs no raised
+  timeouts: ingress-nginx's default 60 s is plenty. See [Worker](#worker).
 - **Shutdown.** `terminationGracePeriodSeconds` defaults to `preStopSleepSeconds + shutdownTimeout + 10`
   (5 + 30 + 10 = 45 s).
 - **Replicas and the database.** Connections = `replicaCount x config.db.poolMax` (+ the Job).
 - **PodDisruptionBudget** (`maxUnavailable: 1`) is only rendered when `replicaCount > 1`.
 - Config changes roll the pods through a `checksum/config` annotation. Secret changes do not (the chart
   cannot see them): run `kubectl rollout restart deploy/<release>-mira`.
+
+## Worker
+
+`templates/worker-deployment.yaml` runs the same image with `command: ["node", "worker.js"]`. The
+Extract/Transform/Load actions on the ARC page only queue a job (table `etl_job`); the worker claims
+and runs it. Design, failure modes and job states: [docs/etl-worker.md](../../../docs/etl-worker.md).
+
+- **Needs** the same Secrets and config as the web app: it refreshes the importing user's PLANTdataHUB
+  token through better-auth (`BETTER_AUTH_SECRET`, `OIDC_*`), and writes to the database with the app
+  role (DML only is enough; the queue table is created by the migration Job).
+- **No Service, Ingress or probes.** It serves no HTTP, and an exec/file liveness check would say
+  nothing about whether imports work. Instead the worker exits non-zero when the database stays
+  unreachable (10 failed polls in a row), and the kubelet restarts it. A hung import is not killed by
+  a probe: every outbound request has a timeout and a job whose worker stops renewing its lease is
+  reclaimed by another worker.
+- **Values** (`worker.*`): `enabled`, `replicas` (default 1), `concurrency` (jobs per pod, default 1,
+  keep `config.db.poolMax` >= concurrency + 2), `leaseSeconds`, `pollSeconds`, `shutdownTimeoutSeconds`,
+  `resources`. Shared with the web app (`config.*`): `http.headersTimeout`/`http.timeout` (outbound
+  request limits) and `etl.maxAttempts`/`etl.retryDelaySeconds`.
+- **Shutdown.** `terminationGracePeriodSeconds` defaults to `shutdownTimeoutSeconds + 15` (60 + 15 =
+  75 s). On SIGTERM the worker stops claiming, waits that long for the running job, hands an unfinished
+  job back to the queue (another worker re-runs it from the start) and exits 0.
+- **Rollouts.** `maxSurge: 1, maxUnavailable: 0`, and the migration hook runs before any worker is
+  replaced. A job running on the old worker is handed back on SIGTERM, or reclaimed when its lease
+  (`leaseSeconds`) expires if the pod was killed.
+- A **PodDisruptionBudget** for the worker is rendered only when `worker.replicas > 1`.
+- `worker.enabled=false` leaves queued jobs untouched until a worker runs somewhere.
 
 ## Migrations
 
@@ -134,7 +160,6 @@ See [values.yaml](values.yaml) (every value is commented) and [values.schema.jso
 - NetworkPolicies and Pod Security admission labels (S2.6)
 - Postgres (S1.10, CloudNativePG)
 - OIDC application registration (S1.8)
-- A background worker Deployment (S1.11)
 - Metrics, ServiceMonitor, alerts (S2.8)
 - Secret creation, HPA, certificates (cert-manager and the ingress controller are assumed)
 
@@ -145,4 +170,5 @@ helm lint deploy/helm/mira -f deploy/helm/mira/ci/default-values.yaml
 helm template mira deploy/helm/mira -f deploy/helm/mira/ci/default-values.yaml | kubeconform -strict -summary -
 ```
 
-CI runs these for the three value sets in [ci/](ci/).
+CI runs these for the five value sets in [ci/](ci/) (default, single replica, no ingress, worker
+disabled, scaled worker) and checks that a bad `worker.*` value is rejected.

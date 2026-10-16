@@ -61,6 +61,17 @@ config:
     connectTimeout: '' # seconds; empty = app default (30)
     ssl: '' # true|require|allow|prefer|verify-full; empty = off. Applies to the app and the migrator.
 
+  # Timeouts for every outbound request to PLANTdataHUB, in seconds (app defaults 30 and 300).
+  # headersTimeout = until the response headers arrive; timeout = until the whole body is read.
+  http:
+    headersTimeout: ''
+    timeout: ''
+
+  # Import jobs (docs/etl-worker.md). Read by the web app and the worker.
+  etl:
+    maxAttempts: 3 # per job; only transient failures (network, timeout, 5xx) are retried
+    retryDelaySeconds: 30 # delay before retry n = this x n
+
   # adapter-node drains in-flight requests for this long after SIGTERM (seconds). The pod's
   # terminationGracePeriodSeconds is derived from it.
   shutdownTimeout: 30
@@ -111,6 +122,35 @@ migration:
       memory: 64Mi
     limits:
       memory: 256Mi
+
+# --- ETL worker ----------------------------------------------------------------------------------
+# Imports run in this Deployment (same image, `node worker.js`), not in the web request. It needs the
+# same Secrets and config as the web app (it refreshes the importing user's PLANTdataHUB token). It
+# has no port, Service or probes: if the database stays unreachable it exits and the kubelet restarts it.
+worker:
+  enabled: true
+  replicas: 1
+  # Jobs per pod at the same time. config.db.poolMax should be at least concurrency + 2.
+  concurrency: 1
+  # A job whose lease is not renewed for this long (seconds) is reclaimed: how fast a killed worker's
+  # job is picked up. Renewed every third of it. Minimum 10.
+  leaseSeconds: 60
+  pollSeconds: 5
+  # On SIGTERM the worker waits this long for the running job, then hands it back to the queue.
+  shutdownTimeoutSeconds: 60
+  # Empty = shutdownTimeoutSeconds + 15.
+  terminationGracePeriodSeconds: ''
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      # Transform of a large ARC (arctrl) is the memory-hungry part, so this is higher than it looks.
+      memory: 1536Mi
+  # Only rendered when replicas > 1.
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 # --- Workload ------------------------------------------------------------------------------------
 containerPort: 3000
@@ -189,15 +229,11 @@ ingress:
   className: nginx
   # REQUIRED when ingress.enabled: the public host name (no scheme).
   host: ''
-  annotations:
-    # Imports (Extract, Transform, Load) run inside one HTTP request until S1.11 moves them to a
-    # worker, and large ARCs take minutes: raise ingress-nginx's 60 s default. Remove once S1.11 lands.
-    # These two annotations are specific to ingress-nginx; with another controller replace the map.
-    nginx.ingress.kubernetes.io/proxy-read-timeout: '300'
-    nginx.ingress.kubernetes.io/proxy-send-timeout: '300'
-    # ingress-nginx sets X-Forwarded-Proto/Host/For itself (overwriting client-sent values) unless
-    # `use-forwarded-headers` is enabled in its ConfigMap, so nothing is needed here.
-    # cert-manager.io/cluster-issuer: letsencrypt
+  # Imports run in the worker, not in a request, so ingress-nginx's default 60 s timeouts are enough.
+  # ingress-nginx sets X-Forwarded-Proto/Host/For itself (overwriting client-sent values) unless
+  # `use-forwarded-headers` is enabled in its ConfigMap, so nothing is needed here. For example:
+  #   cert-manager.io/cluster-issuer: letsencrypt
+  annotations: {}
   tls:
     enabled: true
     # Empty = <release>-mira-tls. The Secret is created by cert-manager or by you.

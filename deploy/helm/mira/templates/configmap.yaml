@@ -25,6 +25,18 @@ data:
   {{- with .Values.config.db.ssl }}
   DB_SSL: {{ . | quote }}
   {{- end }}
+  {{- with .Values.config.http.headersTimeout }}
+  HTTP_HEADERS_TIMEOUT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.http.timeout }}
+  HTTP_TIMEOUT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.etl.maxAttempts }}
+  ETL_MAX_ATTEMPTS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.etl.retryDelaySeconds }}
+  ETL_RETRY_DELAY_SECONDS: {{ . | quote }}
+  {{- end }}
   {{- with .Values.config.proxy.protocolHeader }}
   PROTOCOL_HEADER: {{ . | quote }}
   {{- end }}

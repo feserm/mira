@@ -1,0 +1,92 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mira.fullname" . }}-worker
+  labels:
+    {{- include "mira.workerLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # A new worker may start before the old one stops. A job the old one still runs is handed back
+      # when it stops (or reclaimed once its lease expires), so nothing is lost or run twice at once.
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "mira.workerSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Config changes roll the pods (envFrom is only read at container start).
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "mira.workerSelectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mira.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ include "mira.workerTerminationGracePeriodSeconds" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker
+          image: {{ include "mira.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "worker.js"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          # No ports and no probes: the worker serves no HTTP. If the database stays unreachable it
+          # exits non-zero and the kubelet restarts it.
+          envFrom:
+            - configMapRef:
+                name: {{ include "mira.fullname" . }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.database "path" "secrets.database") | nindent 16 }}
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.authSecret "path" "secrets.authSecret") | nindent 16 }}
+            {{- if .Values.secrets.oidcClientSecret.name }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.oidcClientSecret "path" "secrets.oidcClientSecret") | nindent 16 }}
+            {{- end }}
+            - name: ETL_CONCURRENCY
+              value: {{ .Values.worker.concurrency | quote }}
+            - name: ETL_LEASE_SECONDS
+              value: {{ .Values.worker.leaseSeconds | quote }}
+            - name: ETL_POLL_SECONDS
+              value: {{ .Values.worker.pollSeconds | quote }}
+            - name: ETL_SHUTDOWN_TIMEOUT
+              value: {{ .Values.worker.shutdownTimeoutSeconds | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

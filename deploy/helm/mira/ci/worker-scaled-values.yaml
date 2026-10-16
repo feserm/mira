@@ -1,0 +1,10 @@
+# Several workers with custom limits: renders the worker PodDisruptionBudget.
+worker:
+  replicas: 2
+  concurrency: 2
+  leaseSeconds: 30
+  shutdownTimeoutSeconds: 120
+config:
+  http:
+    headersTimeout: 20
+    timeout: 600

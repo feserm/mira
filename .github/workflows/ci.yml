@@ -22,6 +22,21 @@ jobs:
   verify:
     name: Check, lint, test, build
     runs-on: ubuntu-latest
+    # The queue and runner tests need a real Postgres. They create and drop their own throwaway
+    # database on this server (see src/lib/server/etl/test-db.ts).
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://ci:ci@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       # pnpm version comes from "packageManager" in package.json
@@ -64,7 +79,8 @@ jobs:
       - name: Lint and render every example value set
         run: |
           set -eu
-          for extra in "" ci/single-replica-values.yaml ci/no-ingress-values.yaml; do
+          for extra in "" ci/single-replica-values.yaml ci/no-ingress-values.yaml \
+            ci/worker-disabled-values.yaml ci/worker-scaled-values.yaml; do
             set --
             [ -z "$extra" ] || set -- -f "$CHART/$extra"
             helm lint "$CHART" -f "$CHART/ci/default-values.yaml" "$@"
@@ -82,6 +98,10 @@ jobs:
             echo "expected a failure without a database secret"; exit 1
           fi
           grep -q "secrets.database.name" err.log
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set worker.leaseSeconds=5 2> err.log; then
+            echo "expected a failure for worker.leaseSeconds=5"; exit 1
+          fi
+          grep -q "worker.leaseSeconds" err.log
 
   image:
     name: Image build, scan and push

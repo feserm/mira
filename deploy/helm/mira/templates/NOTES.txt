@@ -26,6 +26,9 @@ Public origin:  {{ include "mira.origin" . }}
 
      kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "mira.fullname" . }}
      kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "mira.fullname" . }}
+{{- if .Values.worker.enabled }}
+     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "mira.fullname" . }}-worker   # imports run here
+{{- end }}
 
    A pod in CrashLoopBackOff with "Invalid server configuration" in its log means a required
    setting or Secret value is missing or malformed.
