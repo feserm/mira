@@ -10,7 +10,6 @@
 		IconPencil,
 		IconDeviceFloppy,
 		IconSettings,
-		IconTrash,
 		IconX
 	} from '@tabler/icons-svelte-runes';
 	import ResponseTimes from '$lib/components/dashboard/ResponseTimes.svelte';
@@ -84,7 +83,9 @@
 		try {
 			const response = await fetch('?/saveLayout', { method: 'POST', body: formData });
 			if (!response.ok) throw new Error('Unable to save layout');
-		} catch {}
+		} catch {
+			// autosave is best-effort; the next layout change retries
+		}
 		return;
 	}
 

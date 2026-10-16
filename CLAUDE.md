@@ -46,11 +46,11 @@ back out through the standard BrAPI HTTP interface.
 ### Auth and PLANTdataHUB access
 
 Auth is [better-auth](https://better-auth.com) (`src/lib/server/auth.ts`), configured with the generic
-OAuth plugin against an OIDC provider. **The OIDC issuer *is* the PLANTdataHUB GitLab instance** —
+OAuth plugin against an OIDC provider. **The OIDC issuer _is_ the PLANTdataHUB GitLab instance** —
 logging in via OIDC produces a GitLab OAuth access token (stored as a better-auth `account` row with
 `providerId: 'oidc'`), which is reused directly against GitLab's REST API (`/api/v4/...`) to list/fetch
 ARCs and download RO-Crate metadata. This dual use is why `src/lib/server/plantdatahub.ts` has its own
-`getAccessToken()` that looks up the *most recently linked* oidc account row explicitly, rather than
+`getAccessToken()` that looks up the _most recently linked_ oidc account row explicitly, rather than
 trusting better-auth's own lookup — a user can accumulate more than one oidc account row across logins.
 
 `src/hooks.server.ts` wraps every request through better-auth's `svelteKitHandler`, and additionally
@@ -72,14 +72,14 @@ its own `pending|success|failed` status/timestamp/error columns:
    **not hardcoded field-by-field**; it's driven by an SSSOM mapping set (`sssom.tsv`, generated from
    the MIAPPE LinkML schema) with **MIAPPE as the pivot** — an ISA field and a BrAPI field are only
    ever related through sharing a MIAPPE subject id, never mapped directly onto each other. Only
-   fields whose *structure* (not just naming) differs between ISA and BrAPI bypass the crosswalk and
+   fields whose _structure_ (not just naming) differs between ISA and BrAPI bypass the crosswalk and
    are handled as named accessor/setter functions instead. Read the large comment block at the top of
    `transform.ts` before touching this file — it explains the registry-keying rationale in detail.
    Study-level MIAPPE fields aren't in `sssom.tsv` yet and are still read by hand (comment-name lookup
    on the ISA study); germplasm/location/program/observation mapping is not yet implemented.
 3. **Load** (`load.ts`) — upserts the transform result into the arc-scoped BrAPI tables inside one
    transaction, keyed on `(arc_id, source_id)` via a generic `upsertArcScoped` helper built from
-   Drizzle's `onConflictDoUpdate`. Contacts are the one *shared* (non-arc-scoped) entity and dedupe
+   Drizzle's `onConflictDoUpdate`. Contacts are the one _shared_ (non-arc-scoped) entity and dedupe
    globally by ORCID → email → (name, institute), one at a time, since a batched upsert has no
    reliable way to correlate returned rows back to input rows when multiple contacts share no
    identifier.

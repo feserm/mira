@@ -9,13 +9,6 @@ import type {
 } from '$lib/types/brapi/core';
 import type { GeoJSON, GeoJSONPointGeometry } from '$lib/types/brapi/common';
 import type {
-	NewCrossingProject,
-	NewCross,
-	NewPlannedCross,
-	NewPedigreeNode,
-	NewSeedLot,
-	NewSeedLotTransaction,
-	NewGermplasmAttributeValue,
 	NewGermplasm,
 	GermplasmOrigin,
 	GermplasmMcpd,

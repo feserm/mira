@@ -19,6 +19,7 @@
 
 	async function selectServer(event: Event) {
 		const value = (event.currentTarget as HTMLSelectElement).value;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- query-only URL, relative to the current page
 		await goto(value ? `?server=${encodeURIComponent(value)}` : '?', {
 			keepFocus: true,
 			replaceState: true

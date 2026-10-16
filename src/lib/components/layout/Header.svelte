@@ -25,7 +25,7 @@
 	<div class="navbar-start gap-6">
 		<a
 			aria-label="MIRA"
-			href="/"
+			href={resolve('/')}
 			class="text-xl font-bold tracking-tight text-base-content transition-opacity hover:opacity-80"
 		>
 			<img alt="MIRA" src={logo} class="h-8 w-8" />
