@@ -3,3 +3,9 @@ allowBuilds:
   '@tailwindcss/oxide': true
   '@prisma/client': false
   better-sqlite3: false
+overrides:
+  # Patched releases for advisories reported by `pnpm audit --prod` (transitive, same major version).
+  # Drop each entry once the parent dependency ships the fix itself.
+  brace-expansion@1: ^1.1.20
+  brace-expansion@2: ^2.1.6
+  devalue: ^5.9.3
