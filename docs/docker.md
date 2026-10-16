@@ -30,6 +30,11 @@ How it is put together ([Dockerfile](../Dockerfile)):
   `dependencies` ends up external and in the image; keep build-time libraries in `devDependencies`.
 - **Runtime user:** the base image's `node` user, `USER 1000:1000`. Set `runAsUser: 1000` or
   `runAsNonRoot: true` in Kubernetes; the image uses a numeric UID, so both work.
+- **Base image hygiene:** the runtime stage applies pending Debian security updates
+  (`apt-get upgrade`) and deletes npm, corepack and yarn. Without that, Trivy reported fixable
+  CRITICAL/HIGH findings in `perl-base` and in packages bundled inside npm. The `apt-get upgrade`
+  means two builds of the same commit can differ slightly in OS packages; the Node version and
+  application layers are identical.
 - `NODE_ENV=production`. `CMD` is in exec form, so `node` is PID 1 and gets `SIGTERM` directly.
 
 Listens on `PORT` (default 3000) and `HOST` (default `0.0.0.0`). Required configuration is listed in
@@ -41,9 +46,19 @@ Measured with `docker images`:
 
 | Image      | Size   |
 | ---------- | ------ |
-| `mira:dev` | 489 MB |
+| `mira:dev` | 501 MB |
 
-For reference, the pinned `node:22-bookworm-slim` base is about 220 MB of that.
+For reference, the pinned `node:22-bookworm-slim` base is about 220 MB of that. (npm, corepack and yarn are deleted from the runtime image, but the base layers still count towards the size.)
+
+## Scanning
+
+CI scans the built image with Trivy (HIGH and CRITICAL, fixable findings only). To run the same
+check locally without installing Trivy:
+
+```sh
+docker save mira:dev | docker run --rm -i --entrypoint sh aquasec/trivy:latest -c \
+  'cat > /tmp/i.tar && trivy image --input /tmp/i.tar --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --quiet'
+```
 
 ## Read-only root filesystem
 
@@ -87,8 +102,8 @@ Expected: `200 ok` from both probes, `exit=0` after `docker stop`, and the log l
 ## Conventions for the Helm chart
 
 - **Image:** `<registry>/<owner>/mira`, tagged with the full git commit SHA (`mira:<40-hex-sha>`).
-  CI also moves a `latest` tag on every push to `main`; do not deploy `latest`, pin the SHA (or the
-  digest).
+  CI pushes only on `main` and only this tag; there is no `latest`, so every deployment names an
+  exact commit. Pin the SHA (or the digest) in the chart.
 - **App:** default `CMD` (`node build`), working directory `/app`, port 3000, probes `/healthz`
   (liveness) and `/readyz` (readiness).
 - **Migrations:** same image, `command: ["node", "migrate.js"]`, working directory `/app` (the image
