@@ -1,5 +1,6 @@
 import type { Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
+import '$lib/server/env'; // validates configuration at server start
 import { auth } from '$lib/server/auth';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { enqueueRequestLog } from '$lib/server/db/request-logs';

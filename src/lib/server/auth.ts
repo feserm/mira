@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import { config } from '$lib/server/env';
 import { betterAuth } from 'better-auth/minimal';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { genericOAuth } from 'better-auth/plugins';
@@ -7,8 +7,8 @@ import { getRequestEvent } from '$app/server';
 import { db } from '$lib/server/db';
 
 export const auth = betterAuth({
-	baseURL: env.ORIGIN,
-	secret: env.BETTER_AUTH_SECRET,
+	baseURL: config.origin,
+	secret: config.authSecret,
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	emailAndPassword: { enabled: true },
 	plugins: [
@@ -16,11 +16,11 @@ export const auth = betterAuth({
 			config: [
 				{
 					providerId: 'oidc',
-					discoveryUrl: `${env.OIDC_ISSUER_URL}/.well-known/openid-configuration`,
-					issuer: env.OIDC_ISSUER_URL,
-					clientId: env.OIDC_CLIENT_ID,
-					clientSecret: env.OIDC_CLIENT_SECRET || undefined,
-					scopes: (env.OIDC_SCOPES ?? 'openid profile email').split(' '),
+					discoveryUrl: `${config.oidc.issuerUrl}/.well-known/openid-configuration`,
+					issuer: config.oidc.issuerUrl,
+					clientId: config.oidc.clientId,
+					clientSecret: config.oidc.clientSecret,
+					scopes: config.oidc.scopes,
 					pkce: true
 				}
 			]

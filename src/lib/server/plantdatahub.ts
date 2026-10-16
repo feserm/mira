@@ -1,6 +1,6 @@
 import { error, type RequestEvent } from '@sveltejs/kit';
 import { desc, eq, and } from 'drizzle-orm';
-import { env } from '$env/dynamic/private';
+import { config } from '$lib/server/env';
 import { auth } from '$lib/server/auth';
 import { db } from '$lib/server/db';
 import { account } from '$lib/server/db/schema';
@@ -8,7 +8,7 @@ import type { GitlabProjectDetail, GitlabProjectSummary, Pagination } from '$lib
 
 // PLANTdataHUB's OIDC issuer is the GitLab instance itself, so the same host
 // serves the REST API and the OIDC-derived access token doubles as a GitLab API token.
-const PLANTDATAHUB_URL = env.OIDC_ISSUER_URL;
+const PLANTDATAHUB_URL = config.oidc.issuerUrl;
 
 export async function getAccessToken(event: RequestEvent): Promise<string> {
 	const userId = event.locals.user?.id;
