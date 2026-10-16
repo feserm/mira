@@ -124,6 +124,7 @@ Order: A and D (and E) in parallel, then B, then C.
 | `DB_IDLE_TIMEOUT`    | no       | seconds, default never                                                                               |
 | `DB_CONNECT_TIMEOUT` | no       | seconds, default 30                                                                                  |
 | `DB_SSL`             | no       | `true`/`require`/`allow`/`prefer`/`verify-full`; unset or `false` = off                              |
+| `DB_PREPARE`         | no       | `true` (default) or `false`; only for a PgBouncer older than 1.21 (session E)                        |
 
 Also read by adapter-node (not validated by MIRA): `PORT`, `HOST`, `PROTOCOL_HEADER`, `HOST_HEADER`, `ADDRESS_HEADER`, `XFF_DEPTH`, `SHUTDOWN_TIMEOUT` (seconds, default 30). Set `terminationGracePeriodSeconds` above `SHUTDOWN_TIMEOUT` plus a few seconds for the log flush and pool close.
 
@@ -147,7 +148,7 @@ Also read by adapter-node (not validated by MIRA): `PORT`, `HOST`, `PROTOCOL_HEA
 - **ORIGIN** is `https://<ingress.host>` unless `config.origin` is set. Verified against the image: with `ORIGIN` set, adapter-node ignores `PROTOCOL_HEADER`/`HOST_HEADER`; they are set only as a safety net. `ADDRESS_HEADER` is unset on purpose (the app never reads the client IP).
 - **Redirect URI** to register (also in `NOTES.txt`): `<ORIGIN>/api/auth/oauth2/callback/oidc`.
 - **Defaults to review in S1.8:** `config.oidc.scopes` is `openid profile email read_api` (the app's own default has no GitLab API scope).
-- **Not verified (needs a cluster):** ingress headers end to end, hook ordering, PDB and rollout behaviour under load, a CloudNativePG Secret's real key names.
+- **Not verified (needs a cluster):** ingress headers end to end, hook ordering, PDB and rollout behaviour under load. (The CloudNativePG Secret key names were read from the operator source in session E, see below.)
 
 **ETL worker as implemented in session D** (details in [etl-worker.md](etl-worker.md)):
 
@@ -159,6 +160,44 @@ Also read by adapter-node (not validated by MIRA): `PORT`, `HOST`, `PROTOCOL_HEA
 - **Chart:** `worker.*` values (`enabled`, `replicas`, `concurrency`, `leaseSeconds`, `pollSeconds`, `shutdownTimeoutSeconds`, `resources`, PDB for >1 replica) and shared `config.http.*`, `config.etl.*`. No Service or probes. The ingress `proxy-read-timeout` workaround is gone.
 - **CI:** `verify` has a `postgres:17` service and `TEST_DATABASE_URL` for the queue tests; the `chart` job renders five value sets.
 - **Not verified:** real GitLab refresh, a real ARC's import time, the rollout on a cluster, PgBouncer. For the exit demo: import a real ARC, restart the web and worker pods during it.
+
+### Needs a human: S1.8 and S1.10
+
+S1.8 and S1.10 are **not ticked**. Session E drafted everything that can be drafted without a cluster or a GitLab application; the items below can only be done and verified on staging. "Done" for each is the checkbox and result in the named runbook.
+
+**S1.8: staging OIDC setup** ([oidc-setup.md](oidc-setup.md))
+
+| What remains                                                                           | Who                           | Done when                                                                                                     |
+| -------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Register the GitLab application (confidential, redirect URI, scopes), store the secret | PLANTdataHUB admin + operator | Runbook section 1 ticked; application id and secret in the cluster, the secret in no file                     |
+| Test whether `read_api` lets an OAuth token list, read and **download the package**    | operator with a staging token | Runbook section 3 curl calls return 200, or the fallback (`api`, or a design change) is decided and recorded  |
+| Log in, list ARCs, import, BrAPI GET on staging                                        | operator                      | Runbook sections 4 and 5 ticked                                                                               |
+| Token lifetime: refresh an expired token in the worker, revoked token fails the job    | operator + GitLab admin       | Runbook section 6 steps 1 to 8 ticked and the result table filled in. Never run against a real GitLab so far. |
+| Decide on the GitLab rotation race (one refresh token, web and worker)                 | dev team                      | Section 6 step 5 outcome recorded; a lock added if it fails                                                   |
+
+**S1.10: Postgres via CloudNativePG** ([deploy/postgres/README.md](../deploy/postgres/README.md), [postgres-runbook.md](postgres-runbook.md))
+
+| What remains                                                                        | Who           | Done when                                                                                                                    |
+| ----------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Install cert-manager, the operator 1.30.1 and the Barman Cloud plugin 0.15.1        | cluster admin | README "Install" steps 1 to 3 show the expected output                                                                       |
+| Choose storage class and sizes, an object store and bucket; create the Secrets      | operator      | Placeholders in `cluster.yaml`/`objectstore.yaml` replaced; `create-secrets.sh` ran                                          |
+| Apply the manifests; verify roles, grants, TLS-only, archiving and the first backup | operator      | README "Verify" boxes ticked (including `permission denied` for the app role and `ContinuousArchiving=True`)                 |
+| Install the chart against it with `verify-full` and the CA mount                    | operator      | Migration Job logs `migrate: applied ...`, web and worker connect; TLS handshake against the real operator certificate works |
+| Check the CA lifetime and what happens to pods when it is re-issued                 | operator      | `notAfter` of `mira-pg-ca` recorded; a restart-after-rotation (or cert-manager) procedure agreed                             |
+| **Restore drill** (point in time, into a new cluster) and roll back                 | operator      | Runbook sections 2 to 6 ticked and the RTO/RPO table in section 7 filled in                                                  |
+| Backup alerts                                                                       | S2.8 owner    | Rules exist for the metrics and conditions listed in the runbook section 1 (not drafted: needs S2.8)                         |
+| Decide the real RTO and RPO and the storage sizes from measured data                | team + ops    | Numbers written into [infrastructure.md](infrastructure.md)                                                                  |
+
+**Infrastructure as drafted in session E** (decisions and failure modes: [infrastructure.md](infrastructure.md))
+
+- **Files:** `deploy/postgres/` (`cluster.yaml`, `objectstore.yaml`, `scheduled-backup.yaml`, `sql/roles.sql`, `kustomization.yaml`, `optional/pooler.yaml`, `restore/cluster-restore.yaml`, `create-secrets.sh`, `validate.sh`, `test-roles.sh`); `docs/infrastructure.md`, `docs/oidc-setup.md`, `docs/postgres-runbook.md`; `compose.yaml` pinned to `postgres:17` on `127.0.0.1` (volume `pgdata17`; an old PostgreSQL 18 volume `mira_pgdata` is untouched and its data is not visible to the 17 container, dump it first or re-import).
+- **Versions pinned:** CloudNativePG 1.30.1, Barman Cloud plugin 0.15.1 (needs cert-manager), PostgreSQL 17.11, PgBouncer 1.25.1.
+- **Roles:** `mira_migrator` owns the database (runs `migrate.js`), `mira_dml` is the NOLOGIN group with SELECT/INSERT/UPDATE/DELETE on tables and USAGE on sequences plus default privileges for the migrator's future objects, `mira_app` logs in (web and worker) as a member of `mira_dml`. Proven locally: migrations as the migrator, an import and the queue as `mira_app`, `CREATE`/`ALTER`/`DROP` refused, a second migration run a no-op, a later table covered by the default privileges.
+- **Cluster:** 3 instances, async, 20 Gi data + 8 Gi WAL, `max_connections` 100 (peak about 61 at the chart defaults), TLS-only for the `mira` database, daily backup 02:00, 30-day recovery window, WAL archived to an S3-compatible bucket (placeholders).
+- **Chart values:** `secrets.database` -> Secret `mira-db` key `DATABASE_URL` (role `mira_app`), `migration.databaseSecret` -> `mira-pg-app` key `uri` (role `mira_migrator`), `config.db.ssl=verify-full`, `config.db.caSecret` -> `mira-pg-ca` key `ca.crt`, `config.db.prepare` (empty unless an old pooler). Example: `deploy/helm/mira/ci/cnpg-values.yaml`.
+- **Secrets, all made by hand:** `mira-pg-app-role` (basic-auth, read by the operator), `mira-db`, `mira-pg-backup-s3`, `mira-oidc`, `mira-auth`; generated by the operator: `mira-pg-app` (keys `uri`, `username`, `user`, `password`, `host`, `port`, `dbname`, `pgpass`, `jdbc-uri`, `fqdn-uri`, `fqdn-jdbc-uri`) and `mira-pg-ca`. Managed roles get no generated Secret.
+- **PgBouncer:** not enabled (budget fits). Tested locally in transaction mode with 1.25.1: worker, queue claim and web app work, with the default `max_prepared_statements`. With 0, `DB_PREPARE=false` is required.
+- **Not verified:** a real cluster, a real GitLab application, a real backup or restore, TLS against a real operator certificate, token refresh against real GitLab, that CI runs the new `postgres` job.
 
 **Sprint 1 exit demo:** `helm install` into an empty namespace, log in with OIDC, import a real ARC, `curl` a BrAPI endpoint, roll the deployment, and nothing is lost.
 

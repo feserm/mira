@@ -14,6 +14,10 @@ services:
       # postgres:17 keeps its data in /var/lib/postgresql/data (a VOLUME of the image). The 18+ images
       # moved it to /var/lib/postgresql/<major>/docker and mount one level up; do not copy that path here.
       # The volume is named pgdata17 so it can never be confused with a PostgreSQL 18 volume (`pgdata`).
+      # Coming from the old unpinned `postgres` image (18)? Your data is still in the volume `<project>_pgdata`
+      # and this database starts empty. Re-import your ARCs, or dump first (sketch, not tested):
+      #   docker run -d --name old -v <project>_pgdata:/var/lib/postgresql -e POSTGRES_PASSWORD=mysecretpassword postgres:18
+      #   docker exec old pg_dump -U root local > local.sql   # then: docker rm -f old, `docker compose up -d`, psql < local.sql
       - pgdata17:/var/lib/postgresql/data
 volumes:
   pgdata17:
