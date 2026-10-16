@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Renders deploy/postgres with kustomize and validates it with kubeconform against the CRD schemas of the
+# Renders deploy/postgres with kustomize (plus the optional pooler and the restore example) and validates it with kubeconform against the CRD schemas of the
 # PINNED operator and plugin versions. Offline except for downloading those release manifests.
 # Needs docker, curl, python3 with PyYAML. Run from the repository root:  deploy/postgres/validate.sh
 #
@@ -29,7 +29,7 @@ python3 -I "$here/hack/crd-to-jsonschema.py" "$work/schemas" "$work/cnpg.yaml" "
 # Render. Bind mounts are not available everywhere, so stream the directory in as a tar.
 tar -C "$here" -c . | docker run --rm -i --entrypoint sh "$KUSTOMIZE_IMAGE" -c \
   'mkdir /w && tar -x -C /w && kustomize build /w' > "$work/rendered.yaml"
-{ cat "$work/rendered.yaml"; echo '---'; cat "$here/optional/pooler.yaml"; } > "$work/all.yaml"
+{ cat "$work/rendered.yaml"; for f in optional/pooler.yaml restore/cluster-restore.yaml; do echo '---'; cat "$here/$f"; done; } > "$work/all.yaml"
 
 port=$((20000 + RANDOM % 20000))
 (cd "$work/schemas" && exec python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1) &

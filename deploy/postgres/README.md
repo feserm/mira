@@ -7,16 +7,17 @@ Backup, restore drill and rollback: [docs/postgres-runbook.md](../../docs/postgr
 against the pinned CRDs (`validate.sh`). The role SQL was run against a local Postgres 17. Everything
 below that needs a cluster is for a human to tick off on staging.
 
-| File                                           | What                                                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [kustomization.yaml](kustomization.yaml)       | Base: ObjectStore, Cluster, ScheduledBackup, and the role SQL as a ConfigMap               |
-| [cluster.yaml](cluster.yaml)                   | 3-instance `Cluster` `mira-pg`, database `mira`, owner `mira_migrator`, managed `mira_app` |
-| [sql/roles.sql](sql/roles.sql)                 | `mira_dml` group role, grants and default privileges (run once at bootstrap)               |
-| [objectstore.yaml](objectstore.yaml)           | Barman Cloud `ObjectStore` (placeholder endpoint and bucket), 30-day retention             |
-| [scheduled-backup.yaml](scheduled-backup.yaml) | Daily base backup 02:00                                                                    |
-| [optional/pooler.yaml](optional/pooler.yaml)   | PgBouncer `Pooler`, not applied by default                                                 |
-| [create-secrets.sh](create-secrets.sh)         | Creates the three Secrets that nothing else creates                                        |
-| [validate.sh](validate.sh)                     | Renders and validates everything against the pinned CRDs                                   |
+| File                                                         | What                                                                                       |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| [kustomization.yaml](kustomization.yaml)                     | Base: ObjectStore, Cluster, ScheduledBackup, and the role SQL as a ConfigMap               |
+| [cluster.yaml](cluster.yaml)                                 | 3-instance `Cluster` `mira-pg`, database `mira`, owner `mira_migrator`, managed `mira_app` |
+| [sql/roles.sql](sql/roles.sql)                               | `mira_dml` group role, grants and default privileges (run once at bootstrap)               |
+| [objectstore.yaml](objectstore.yaml)                         | Barman Cloud `ObjectStore` (placeholder endpoint and bucket), 30-day retention             |
+| [scheduled-backup.yaml](scheduled-backup.yaml)               | Daily base backup 02:00                                                                    |
+| [optional/pooler.yaml](optional/pooler.yaml)                 | PgBouncer `Pooler`, not applied by default                                                 |
+| [restore/cluster-restore.yaml](restore/cluster-restore.yaml) | Example `Cluster` for a point-in-time restore (the drill)                                  |
+| [create-secrets.sh](create-secrets.sh)                       | Creates the three Secrets that nothing else creates                                        |
+| [validate.sh](validate.sh)                                   | Renders and validates everything against the pinned CRDs                                   |
 
 ## Versions (pinned, not vendored)
 
@@ -106,7 +107,7 @@ The pooler's TLS certificate and its names are documented but untested.
 deploy/postgres/validate.sh
 ```
 
-Expected last line: `Summary: 5 resources found parsing stdin - Valid: 5, Invalid: 0, Errors: 0, Skipped: 0`. It downloads the two
+Expected last line: `Summary: 6 resources found parsing stdin - Valid: 6, Invalid: 0, Errors: 0, Skipped: 0`. It downloads the two
 pinned release manifests (checking their hashes), turns their CRDs into JSON Schemas, renders the kustomization with the
 `kustomize` image and runs `kubeconform -strict`. It proves the fields exist and have the right types. It does not prove the
 operator accepts the values.

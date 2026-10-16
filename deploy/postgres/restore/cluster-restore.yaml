@@ -1,0 +1,64 @@
+# EXAMPLE, not part of the default kustomization. Point-in-time restore of mira-pg into a NEW cluster
+# (docs/postgres-runbook.md). Edit targetTime, apply into the same namespace, leave the original alone.
+#
+# Must match the source where PostgreSQL requires it: same major version and a max_connections that is
+# not lower. Storage and resources may differ. The restored cluster issues its own CA and certificates,
+# so the app needs the new <cluster>-ca Secret (config.db.caSecret) when it is switched over.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: mira-pg-restore
+spec:
+  description: MIRA database, point-in-time restore drill
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.11-system-trixie
+  instances: 1 # a drill needs no replicas; raise it for a real recovery
+  postgresql:
+    parameters:
+      max_connections: '100'
+      shared_buffers: 256MB
+    pg_hba:
+      - hostnossl mira all all reject
+  bootstrap:
+    recovery:
+      source: mira-pg-source
+      # Recover up to this moment (UTC). Omit recoveryTarget to replay everything that was archived.
+      recoveryTarget:
+        targetTime: '2026-01-01T00:00:00Z'
+      # The database and owner already exist in the backup; naming them makes the operator generate
+      # the Secret mira-pg-restore-app for the owner.
+      database: mira
+      owner: mira_migrator
+  externalClusters:
+    - name: mira-pg-source
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: mira-pg-backups
+          # The NAME of the cluster that wrote the backups, not of this one.
+          serverName: mira-pg
+  # Same login role as the source. Its password Secret is the one that already exists.
+  managed:
+    roles:
+      - name: mira_app
+        ensure: present
+        login: true
+        inRoles:
+          - mira_dml
+        connectionLimit: 80
+        passwordSecret:
+          name: mira-pg-app-role
+  storage:
+    storageClass: CHANGE_ME
+    size: 20Gi
+  walStorage:
+    storageClass: CHANGE_ME
+    size: 8Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 1Gi
+  # No WAL archiving: the drill must not write into the production backup path. For a real recovery
+  # add the same `plugins` block as in cluster.yaml (the archive path includes the cluster name,
+  # so it does not collide with mira-pg's).
