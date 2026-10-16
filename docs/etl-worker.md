@@ -85,3 +85,50 @@ expires before a queued or retried job runs.
 Every outbound `fetch` goes through `fetchWithTimeout`: a headers timeout (`HTTP_HEADERS_TIMEOUT`,
 default 30 s) and an overall timeout including the body (`HTTP_TIMEOUT`, default 300 s). A timeout is a
 transient, readable job error. The existing 5 s NCBI timeout is kept (best-effort lookup).
+
+## As implemented
+
+**Files.** Queue: `src/lib/server/etl/queue.ts` (table in `db/schema/staging/etl-job.ts`, migration
+`0003_etl_job`). Claim loop: `etl/runner.ts`. Steps: `etl/pipeline.ts` (take a `StepContext`, return
+`{ok}` or `{error, transient}`), `etl/execute.ts` (what each job kind runs). Worker entry:
+`scripts/worker.ts`, bundled by `pnpm build:worker` (`vite.worker.config.ts` aliases `$lib` and the two
+SvelteKit env modules to shims). Token: `etl/worker-auth.ts`, sharing `auth-options.ts` with `auth.ts`.
+Timeouts: `fetch-timeout.ts`.
+
+**Job states.** `queued` (waiting, or waiting to retry: `attempts > 0` and `error` set), `running`
+(`locked_by`, `lease_expires_at`, `current_step`), `succeeded`, `failed` (`error` is shown on the ARC
+page). The ARC page polls `GET /arcs/<id>/job` every 2 s only while the latest job is queued or running.
+
+**Settings.** `ETL_CONCURRENCY` (1), `ETL_LEASE_SECONDS` (60, min 10), `ETL_POLL_SECONDS` (5),
+`ETL_MAX_ATTEMPTS` (3), `ETL_RETRY_DELAY_SECONDS` (30), `ETL_SHUTDOWN_TIMEOUT` (60),
+`HTTP_HEADERS_TIMEOUT` (30), `HTTP_TIMEOUT` (300). Validated at start-up like the rest
+(`env-schema.ts`).
+
+**Small behaviour changes.** A 401/403 on the RO-Crate download is now reported as such (it used to
+become a 502), and other 4xx from PLANTdataHUB are no longer reported as 502, so they are not retried.
+
+**Tests.** `queue.test.ts` and `runner.test.ts` run against a real Postgres: set `TEST_DATABASE_URL`
+(any URL on a server where you may create databases; each suite creates and drops its own database and
+never touches the one in the URL). Without it they are skipped, with a visible placeholder test. CI
+has a `postgres:17` service container in `verify`, so they run there.
+`pnpm test` locally: `TEST_DATABASE_URL=postgres://root:mysecretpassword@localhost:5432/local pnpm test`
+with `docker compose up -d`.
+
+**Verified, and what the stub covered.** With the built image (read-only root, UID 1000, all
+capabilities dropped) against a throwaway database and a small HTTP stub standing in for PLANTdataHUB
+(OIDC discovery, the `refresh_token` grant, project and RO-Crate endpoints, a generated one-study
+RO-Crate): refresh of an expired access token and import; a revoked refresh token fails the job at
+once with the "sign in again" message and no staging row; a 75 s download (longer than the 60 s ingress
+default) completes; `docker kill` of the worker mid-job leads to a reclaim (attempt 2) and success; a
+duplicate request for a running ARC is rejected by the unique index; ARC 90 and 91 run in parallel on
+one worker; `docker stop` exits 0 in about 3 s and hands the job back; a killed worker on its last
+attempt is reaped as `failed` and `ro_crate_staging` shows the in-flight step failed; the real web
+container enqueues in about 30 ms, deduplicates a second click, serves the job endpoint (401 without a
+session), renders the status, disables the buttons while a job is active and keeps working across a
+web restart.
+
+**Not verified.** Token refresh against a real GitLab (the stub accepts any request shaped like the
+refresh grant); a real ARC's import time and memory; the ARC page's polling in a real browser (the
+endpoint and server-rendered state were checked, not the client-side timer); the ingress timeout
+removal end to end; worker behaviour in a rollout on a real cluster; PgBouncer (the design uses only
+transaction-scoped locks and no LISTEN/NOTIFY, but it was not tried).

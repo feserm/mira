@@ -107,7 +107,7 @@ Order: A and D (and E) in parallel, then B, then C.
 | [ ]  | S1.8  |
 | [x]  | S1.9  |
 | [ ]  | S1.10 |
-| [ ]  | S1.11 |
+| [x]  | S1.11 |
 
 **Env vars as implemented in session A** (validated at boot by `src/lib/server/env.ts`; full docs in `.env.example`):
 
@@ -148,6 +148,17 @@ Also read by adapter-node (not validated by MIRA): `PORT`, `HOST`, `PROTOCOL_HEA
 - **Redirect URI** to register (also in `NOTES.txt`): `<ORIGIN>/api/auth/oauth2/callback/oidc`.
 - **Defaults to review in S1.8:** `config.oidc.scopes` is `openid profile email read_api` (the app's own default has no GitLab API scope).
 - **Not verified (needs a cluster):** ingress headers end to end, hook ordering, PDB and rollout behaviour under load, a CloudNativePG Secret's real key names.
+
+**ETL worker as implemented in session D** (details in [etl-worker.md](etl-worker.md)):
+
+- **Image command:** `node worker.js` (same image, working directory `/app`, no port). Needs the app's env (`DATABASE_URL`, `ORIGIN`, `BETTER_AUTH_SECRET`, `OIDC_*`).
+- **New env vars** (validated at boot): `HTTP_HEADERS_TIMEOUT` (30 s), `HTTP_TIMEOUT` (300 s), `ETL_CONCURRENCY` (1), `ETL_LEASE_SECONDS` (60), `ETL_POLL_SECONDS` (5), `ETL_MAX_ATTEMPTS` (3), `ETL_RETRY_DELAY_SECONDS` (30), `ETL_SHUTDOWN_TIMEOUT` (60).
+- **Queue:** table `etl_job` (migration `0003_etl_job`, DML only at runtime), `FOR UPDATE SKIP LOCKED`, one active job per ARC (a second Import click is deduplicated), lease + heartbeat, retries only for transient errors, per-ARC `pg_advisory_xact_lock` in Load. No pg-boss.
+- **Job states:** `queued` (also while waiting to retry), `running`, `succeeded`, `failed`. The ARC page polls `/arcs/<id>/job` only while a job is active.
+- **Token:** the worker runs as the importing user's linked `oidc` account and refreshes through better-auth with a `userId`. Expired or revoked refresh token: the job fails at once with "sign in again and retry".
+- **Chart:** `worker.*` values (`enabled`, `replicas`, `concurrency`, `leaseSeconds`, `pollSeconds`, `shutdownTimeoutSeconds`, `resources`, PDB for >1 replica) and shared `config.http.*`, `config.etl.*`. No Service or probes. The ingress `proxy-read-timeout` workaround is gone.
+- **CI:** `verify` has a `postgres:17` service and `TEST_DATABASE_URL` for the queue tests; the `chart` job renders five value sets.
+- **Not verified:** real GitLab refresh, a real ARC's import time, the rollout on a cluster, PgBouncer. For the exit demo: import a real ARC, restart the web and worker pods during it.
 
 **Sprint 1 exit demo:** `helm install` into an empty namespace, log in with OIDC, import a real ARC, `curl` a BrAPI endpoint, roll the deployment, and nothing is lost.
 

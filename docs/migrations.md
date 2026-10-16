@@ -51,3 +51,7 @@ database role that may run DDL; the app role does not need to.
 Change the schema under `src/lib/server/db/schema/`, run `pnpm db:generate`, and commit the new SQL
 file and `drizzle/meta/` changes. The runner picks them up on the next deploy. `pnpm db:push` is for
 local development only.
+
+The ETL job queue table `etl_job` (migration `0003_etl_job`) is created this way too. The app and the
+worker only need DML on it: neither creates tables at start-up (one reason pg-boss was not used, see
+[etl-worker.md](etl-worker.md)).

@@ -1,7 +1,8 @@
 # Container image
 
-One image runs both the web app (`node build`, the default `CMD`) and the migration runner
-(`node migrate.js`, see [migrations.md](migrations.md)).
+One image runs the web app (`node build`, the default `CMD`), the migration runner
+(`node migrate.js`, see [migrations.md](migrations.md)) and the ETL worker (`node worker.js`, see
+[etl-worker.md](etl-worker.md)).
 
 ## Build
 
@@ -21,7 +22,7 @@ How it is put together ([Dockerfile](../Dockerfile)):
   steps use `--frozen-lockfile`, so the build fails if `pnpm-lock.yaml` is out of date.
 - **Stages:** `build` (all dependencies, `pnpm build` and `pnpm build:migrate`), `prod-deps`
   (`pnpm install --prod --ignore-scripts`), `runtime` (copies only `node_modules` from `prod-deps`,
-  plus `build/`, `migrate.js`, `drizzle/` and `package.json`).
+  plus `build/`, `migrate.js`, `worker.js`, `drizzle/` and `package.json`).
 - **Why a prod `node_modules` at all:** adapter-node leaves everything listed under `dependencies`
   in `package.json` external. That is `@nfdi4plants/arctrl`, `@tabler/icons-svelte-runes` and
   `svelte-grid`. Everything else (including `drizzle-orm`, `postgres` and `better-auth`) is bundled
@@ -46,7 +47,7 @@ Measured with `docker images`:
 
 | Image      | Size   |
 | ---------- | ------ |
-| `mira:dev` | 501 MB |
+| `mira:dev` | 503 MB |
 
 For reference, the pinned `node:22-bookworm-slim` base is about 220 MB of that. (npm, corepack and yarn are deleted from the runtime image, but the base layers still count towards the size.)
 
@@ -109,5 +110,9 @@ Expected: `200 ok` from both probes, `exit=0` after `docker stop`, and the log l
 - **Migrations:** same image, `command: ["node", "migrate.js"]`, working directory `/app` (the image
   default), env `DATABASE_URL` (+ optional `DB_SSL`). Run as a pre-install/pre-upgrade Job or an
   initContainer.
+- **Worker:** same image, `command: ["node", "worker.js"]`, no port. Needs the same env as the app
+  (`DATABASE_URL`, `ORIGIN`, `BETTER_AUTH_SECRET`, `OIDC_*`); `ETL_*` and `HTTP_*` are optional.
+  `worker.js` is one bundle like `migrate.js`, except that `@nfdi4plants/arctrl` stays external and is
+  loaded from the image's `node_modules`.
 - **Security context:** UID/GID 1000, `readOnlyRootFilesystem: true`,
   `allowPrivilegeEscalation: false`, drop all capabilities.
