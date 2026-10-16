@@ -1,5 +1,6 @@
 export * from './auth/schema';
 export * from './staging/schema';
+export * from './staging/etl-job';
 export * from './brapi/core';
 export * from './brapi/germplasm';
 export * from './brapi/phenotyping';
