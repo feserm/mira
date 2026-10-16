@@ -17,9 +17,11 @@ const queue: RequestLog[] = [];
 let flushInProgress = false;
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let consecutiveFailures = 0;
+let inflight: Promise<void> | undefined;
+let stopped = false;
 
 function scheduleFlush(delay: number): void {
-	if (flushTimer) return;
+	if (stopped || flushTimer) return;
 
 	flushTimer = setTimeout(() => {
 		flushTimer = undefined;
@@ -29,9 +31,13 @@ function scheduleFlush(delay: number): void {
 	if (typeof flushTimer === 'object' && 'unref' in flushTimer) flushTimer.unref();
 }
 
-async function flushRequestLogs(): Promise<void> {
-	if (flushInProgress || queue.length === 0) return;
+function flushRequestLogs(): Promise<void> {
+	if (flushInProgress || queue.length === 0) return Promise.resolve();
+	inflight = flushBatch();
+	return inflight;
+}
 
+async function flushBatch(): Promise<void> {
 	flushInProgress = true;
 	const batch = queue.splice(0, BATCH_SIZE);
 
@@ -69,4 +75,35 @@ export function enqueueRequestLog(log: RequestLog): void {
 	} else {
 		scheduleFlush(FLUSH_DELAY_MS);
 	}
+}
+
+/** Drains the queue for shutdown, bounded by `timeoutMs`, and stops further timer-driven flushes.
+ *  Gives up early after a failed insert (the logs are best-effort; don't hold up the exit). */
+export async function flushAndStop(timeoutMs = 3000): Promise<void> {
+	stopped = true;
+	clearTimeout(flushTimer);
+	flushTimer = undefined;
+
+	const drain = async () => {
+		while (queue.length > 0 || flushInProgress) {
+			if (flushInProgress) await inflight;
+			else await flushRequestLogs();
+			if (consecutiveFailures > 0) return;
+		}
+	};
+
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await Promise.race([
+			drain(),
+			new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, timeoutMs);
+			})
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
+
+	if (queue.length > 0)
+		console.error(`Dropping ${queue.length} unflushed request log(s) on shutdown`);
 }
