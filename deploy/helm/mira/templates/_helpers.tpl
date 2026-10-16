@@ -107,3 +107,32 @@ secretKeyRef:
 {{- add (int .Values.worker.shutdownTimeoutSeconds) 15 -}}
 {{- end -}}
 {{- end }}
+
+{{/* A private CA for the database, mounted from an existing Secret (config.db.caSecret). The three
+     helpers are used by the web Deployment, the worker and the migration Job. Only `key` is projected,
+     because CloudNativePG's <cluster>-ca Secret also holds the CA's private key (ca.key). */}}
+{{- define "mira.dbCaEnv" -}}
+{{- if .Values.config.db.caSecret.name -}}
+- name: NODE_EXTRA_CA_CERTS
+  value: /etc/mira/db-ca/{{ .Values.config.db.caSecret.key }}
+{{- end -}}
+{{- end }}
+
+{{- define "mira.dbCaVolumeMount" -}}
+{{- if .Values.config.db.caSecret.name -}}
+- name: db-ca
+  mountPath: /etc/mira/db-ca
+  readOnly: true
+{{- end -}}
+{{- end }}
+
+{{- define "mira.dbCaVolume" -}}
+{{- if .Values.config.db.caSecret.name -}}
+- name: db-ca
+  secret:
+    secretName: {{ .Values.config.db.caSecret.name | quote }}
+    items:
+      - key: {{ .Values.config.db.caSecret.key | quote }}
+        path: {{ .Values.config.db.caSecret.key | quote }}
+{{- end -}}
+{{- end }}

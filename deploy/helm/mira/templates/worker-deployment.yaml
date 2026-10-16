@@ -72,11 +72,20 @@ spec:
               value: {{ .Values.worker.pollSeconds | quote }}
             - name: ETL_SHUTDOWN_TIMEOUT
               value: {{ .Values.worker.shutdownTimeoutSeconds | quote }}
+            {{- include "mira.dbCaEnv" . | nindent 12 }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
+          {{- if .Values.config.db.caSecret.name }}
+          volumeMounts:
+            {{- include "mira.dbCaVolumeMount" . | nindent 12 }}
+          {{- end }}
+      {{- if .Values.config.db.caSecret.name }}
+      volumes:
+        {{- include "mira.dbCaVolume" . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

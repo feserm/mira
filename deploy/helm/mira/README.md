@@ -6,8 +6,9 @@ subcharts. Postgres is not included. Image and migration details: [docker.md](..
 
 ## Prerequisites
 
-1. **A reachable Postgres** with an empty database and a role the app can log in with. Until
-   CloudNativePG (S1.10) is in place, any Postgres 15+ works.
+1. **A reachable Postgres** with an empty database and a role the app can log in with. Any Postgres 15+
+   works; the intended setup is CloudNativePG ([deploy/postgres](../../postgres/README.md), see
+   [With CloudNativePG](#with-cloudnativepg)).
 2. **Secrets** in the release namespace, created _before_ `helm install` (see below). The chart never
    contains or creates secret values.
 3. **An ingress controller.** The defaults target ingress-nginx; set `ingress.className` and
@@ -43,11 +44,20 @@ kubectl -n mira create secret generic mira-migrator \
 ```
 
 Secret and key names are values (`secrets.*.name` / `.key`), so existing Secrets with other names
-work. **CloudNativePG** generates a Secret per role (e.g. `<cluster>-app`) whose keys include `uri`
-(a full `postgresql://` URL), `username`, `password` and `host`. Point the chart at it directly:
-`--set secrets.database.name=<cluster>-app --set secrets.database.key=uri`. For the split roles of
-S1.10 use the migrator role's Secret in `migration.databaseSecret` and the DML-only role's Secret in
-`secrets.database`. (Not verified against a real operator: check the key names in your cluster.)
+work.
+
+**CloudNativePG** generates one Secret for the database owner, `<cluster>-app`. Its keys (read from the operator source,
+`pkg/specs/secrets.go`, v1.30.1; not checked against a running operator) are: `username`, `user`, `password`, `dbname`,
+`host`, `port`, `pgpass`, `uri`, `jdbc-uri`, `fqdn-uri`, `fqdn-jdbc-uri`. `uri` is a complete `postgresql://` URL, so it can be used
+as `DATABASE_URL` directly. Roles added through `managed.roles` get **no** generated Secret (you supply a
+`basic-auth` Secret with `username` and `password` only), so the DML-only role's URL has to be assembled
+by hand: `deploy/postgres/create-secrets.sh` does it. The pairing used by the manifests:
+
+| Chart value                | Secret        | Key            | Role            |
+| -------------------------- | ------------- | -------------- | --------------- |
+| `migration.databaseSecret` | `mira-pg-app` | `uri`          | `mira_migrator` |
+| `secrets.database`         | `mira-db`     | `DATABASE_URL` | `mira_app`      |
+| `config.db.caSecret`       | `mira-pg-ca`  | `ca.crt`       | (server CA)     |
 
 ## Install
 
@@ -69,6 +79,31 @@ Or put the same keys in a values file (see [ci/default-values.yaml](ci/default-v
 references have no defaults: `values.schema.json` rejects the install, naming the missing value.
 
 Use `--set-string` if you pass something that looks like a number as a value.
+
+### With CloudNativePG
+
+After [deploy/postgres](../../postgres/README.md) is applied and healthy, add these to the install command
+(or a values file, see [ci/cnpg-values.yaml](ci/cnpg-values.yaml)):
+
+```sh
+  --set secrets.database.name=mira-db \
+  --set migration.databaseSecret.name=mira-pg-app --set migration.databaseSecret.key=uri \
+  --set config.db.ssl=verify-full \
+  --set config.db.caSecret.name=mira-pg-ca
+```
+
+- `config.db.caSecret` mounts only the Secret's `ca.crt` (read-only, `/etc/mira/db-ca`) and sets
+  `NODE_EXTRA_CA_CERTS` in the web, worker and migration pods. The Secret must exist before the install, because the
+  migration Job is a pre-install hook. `extraEnv` cannot do this: it has no volume and does not reach the Job.
+- `NODE_EXTRA_CA_CERTS` is read once at process start: after the CA is replaced, restart the pods.
+- The `DATABASE_URL` host must be a name in the server certificate, e.g. `mira-pg-rw`; the operator-generated `uri`
+  uses `mira-pg-rw.<namespace>`, which is also in it.
+- `config.db.prepare=false` (`DB_PREPARE`) is only for a PgBouncer older than 1.21 or with `max_prepared_statements=0`.
+  It does not reach the migration Job, which must connect to the database directly, never through a pooler.
+- Connections: `replicaCount x poolMax` plus the worker's `poolMax`; the budget is in
+  [docs/infrastructure.md](../../../docs/infrastructure.md).
+- Not verified against a real cluster: that a Secret mounted with `items` works with the operator-issued CA, and the
+  TLS handshake against a real CloudNativePG certificate.
 
 ### OIDC redirect URI
 
@@ -158,8 +193,8 @@ See [values.yaml](values.yaml) (every value is commented) and [values.schema.jso
 ## Not included
 
 - NetworkPolicies and Pod Security admission labels (S2.6)
-- Postgres (S1.10, CloudNativePG)
-- OIDC application registration (S1.8)
+- Postgres itself: manifests are in [deploy/postgres](../../postgres/README.md), not part of this chart
+- OIDC application registration: [docs/oidc-setup.md](../../../docs/oidc-setup.md)
 - Metrics, ServiceMonitor, alerts (S2.8)
 - Secret creation, HPA, certificates (cert-manager and the ingress controller are assumed)
 
@@ -170,5 +205,5 @@ helm lint deploy/helm/mira -f deploy/helm/mira/ci/default-values.yaml
 helm template mira deploy/helm/mira -f deploy/helm/mira/ci/default-values.yaml | kubeconform -strict -summary -
 ```
 
-CI runs these for the five value sets in [ci/](ci/) (default, single replica, no ingress, worker
-disabled, scaled worker) and checks that a bad `worker.*` value is rejected.
+CI runs these for the six value sets in [ci/](ci/) (default, single replica, no ingress, worker
+disabled, scaled worker, CloudNativePG) and checks that a bad `worker.*` or `config.db.ssl` value is rejected.

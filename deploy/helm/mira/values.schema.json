@@ -111,6 +111,47 @@
 							"minimum": 0
 						}
 					}
+				},
+				"db": {
+					"type": "object",
+					"properties": {
+						"poolMax": {
+							"type": "integer",
+							"minimum": 1
+						},
+						"idleTimeout": {
+							"type": ["integer", "string"],
+							"pattern": "^[0-9]*$"
+						},
+						"connectTimeout": {
+							"type": ["integer", "string"],
+							"pattern": "^[0-9]*$",
+							"minimum": 1
+						},
+						"ssl": {
+							"type": "string",
+							"enum": ["", "true", "false", "require", "allow", "prefer", "verify-full"],
+							"description": "DB_SSL; empty = off"
+						},
+						"prepare": {
+							"type": "string",
+							"enum": ["", "true", "false"],
+							"description": "DB_PREPARE; empty = app default (true). false only behind an old PgBouncer"
+						},
+						"caSecret": {
+							"type": "object",
+							"properties": {
+								"name": {
+									"type": "string",
+									"description": "Existing Secret holding the CA that signed the Postgres server certificate; empty = none"
+								},
+								"key": {
+									"type": "string",
+									"minLength": 1
+								}
+							}
+						}
+					}
 				}
 			}
 		},

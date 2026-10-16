@@ -25,6 +25,9 @@ data:
   {{- with .Values.config.db.ssl }}
   DB_SSL: {{ . | quote }}
   {{- end }}
+  {{- with .Values.config.db.prepare }}
+  DB_PREPARE: {{ . | quote }}
+  {{- end }}
   {{- with .Values.config.http.headersTimeout }}
   HTTP_HEADERS_TIMEOUT: {{ . | quote }}
   {{- end }}

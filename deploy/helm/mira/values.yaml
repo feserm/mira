@@ -59,7 +59,17 @@ config:
     poolMax: 10
     idleTimeout: '' # seconds; empty = app default (never)
     connectTimeout: '' # seconds; empty = app default (30)
-    ssl: '' # true|require|allow|prefer|verify-full; empty = off. Applies to the app and the migrator.
+    ssl: '' # true|require|allow|prefer|verify-full; empty = off. Applies to the app, the worker and the migrator.
+    # Named prepared statements. Empty = app default (true). Set 'false' only behind a PgBouncer older
+    # than 1.21 or with max_prepared_statements=0 (docs/infrastructure.md section 5). App and worker only.
+    prepare: ''
+    # A private CA for the Postgres server certificate, needed for ssl: verify-full with CloudNativePG.
+    # The Secret must already exist (CloudNativePG's <cluster>-ca does). Only `key` is mounted, read-only,
+    # at /etc/mira/db-ca in the web, worker and migration pods, and NODE_EXTRA_CA_CERTS points at it.
+    # Node reads that variable once at start: restart the pods after the CA is replaced.
+    caSecret:
+      name: ''
+      key: ca.crt
 
   # Timeouts for every outbound request to PLANTdataHUB, in seconds (app defaults 30 and 300).
   # headersTimeout = until the response headers arrive; timeout = until the whole body is read.
@@ -82,7 +92,9 @@ config:
     xffDepth: 1
     addressHeader: '' # see the note above before setting this
 
-# Extra environment variables for the app container (list of EnvVar objects), e.g. NODE_EXTRA_CA_CERTS.
+# Extra environment variables for the app and worker containers (list of EnvVar objects). Not applied to
+# the migration Job, which runs before the chart's own resources exist. For a Postgres CA use
+# config.db.caSecret, which also reaches the Job.
 extraEnv: []
 
 # --- Secrets (never created by this chart) -------------------------------------------------------

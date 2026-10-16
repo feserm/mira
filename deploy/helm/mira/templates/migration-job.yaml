@@ -3,7 +3,8 @@
 {{- if not $dbSecret.name }}{{ $dbSecret = .Values.secrets.database }}{{ end }}
 # Runs BEFORE the chart's other resources exist (pre-install) or are updated (pre-upgrade).
 # It therefore references only things that must already exist: the Secret and the ServiceAccount.
-# The ConfigMap is deliberately not used; the Job needs only DATABASE_URL (and DB_SSL).
+# The ConfigMap is deliberately not used; the Job needs only DATABASE_URL (and DB_SSL, and the CA
+# Secret when config.db.caSecret is set: it must exist beforehand, like the database Secret).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -49,6 +50,15 @@ spec:
             - name: DB_SSL
               value: {{ . | quote }}
             {{- end }}
+            {{- include "mira.dbCaEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.migration.resources | nindent 12 }}
+          {{- if .Values.config.db.caSecret.name }}
+          volumeMounts:
+            {{- include "mira.dbCaVolumeMount" . | nindent 12 }}
+          {{- end }}
+      {{- if .Values.config.db.caSecret.name }}
+      volumes:
+        {{- include "mira.dbCaVolume" . | nindent 8 }}
+      {{- end }}
 {{- end }}

@@ -1,0 +1,18 @@
+# A CloudNativePG-style setup (S1.10): a separate DDL-capable migrator Secret read from its `uri` key,
+# a DML-only app Secret, TLS with certificate verification against the operator's CA, and the optional
+# pooler fallback switched on. Secret names are the ones in deploy/postgres. All values are placeholders.
+secrets:
+  database:
+    name: mira-db
+    key: DATABASE_URL
+migration:
+  databaseSecret:
+    name: mira-pg-app
+    key: uri
+config:
+  db:
+    ssl: verify-full
+    prepare: 'false'
+    caSecret:
+      name: mira-pg-ca
+      key: ca.crt
