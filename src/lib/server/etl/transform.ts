@@ -32,9 +32,7 @@ import type {
 	ObservationUnitPosition
 } from '$lib/types/brapi/phenotyping';
 import { ARC, type OntologyAnnotation, type CompositeColumn } from '@nfdi4plants/arctrl';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import sssomRaw from './sssom.tsv?raw';
 
 /** A study-level contact, paired with the ARC identifier of the study it belongs to
  *  (studies aren't upserted yet at transform time, so they have no database id to link by). */
@@ -166,14 +164,12 @@ function buildCrosswalk(rows: SssomRow[]): CrosswalkEntry[] {
 
 let cachedCrosswalk: CrosswalkEntry[] | undefined;
 
-/** Loads and parses sssom.tsv once per process. The file is expected to sit next to this module
- *  -- it's the `gen-sssom` output described in the LinkML/SSSOM strategy doc, vendored here the
- *  same way the ISA/BrAPI schema snapshots are, rather than fetched at runtime. */
-function getCrosswalk(): CrosswalkEntry[] {
+/** Parses sssom.tsv once per process. The file is the `gen-sssom` output described in the
+ *  LinkML/SSSOM strategy doc, vendored here the same way the ISA/BrAPI schema snapshots are,
+ *  and inlined into the bundle via Vite's `?raw` so it needs no `src/` on disk at runtime. */
+export function getCrosswalk(): CrosswalkEntry[] {
 	if (!cachedCrosswalk) {
-		const sssomPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sssom.tsv');
-		const raw = readFileSync(sssomPath, 'utf-8');
-		cachedCrosswalk = buildCrosswalk(parseSssom(raw));
+		cachedCrosswalk = buildCrosswalk(parseSssom(sssomRaw));
 	}
 	return cachedCrosswalk;
 }
