@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Registry credentials come from the workflow token (GHCR). To push elsewhere, set the repository
+  # variable IMAGE_NAME and the secrets REGISTRY, REGISTRY_USERNAME and REGISTRY_PASSWORD.
+  REGISTRY: ${{ secrets.REGISTRY || 'ghcr.io' }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME || github.repository }}
+
+jobs:
+  verify:
+    name: Check, lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm version comes from "packageManager" in package.json
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm lint
+      # TODO: add the client project (`pnpm exec playwright install --with-deps chromium`, then
+      # `pnpm vitest run --project client`) once the repo has any *.svelte.test.ts files.
+      - run: pnpm vitest run --project server
+      # Needs no env vars; this also proves the build works in a clean environment.
+      - run: pnpm build
+      - run: pnpm build:migrate
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      # Production dependency tree only; fails on high or critical advisories.
+      - run: pnpm audit --prod --audit-level high
+
+  image:
+    name: Image build, scan and push
+    needs: [verify, audit]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Compute image name
+        id: image
+        # Registry paths must be lowercase
+        run: echo "ref=$(echo "${REGISTRY}/${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]'):${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ steps.image.outputs.ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: |
+          set -eu
+          image='${{ steps.image.outputs.ref }}'
+          test "$(docker run --rm --entrypoint id "$image" -u)" != 0
+          # Required config missing: must exit 1 with one clear error
+          if docker run --rm --read-only "$image" > startup.log 2>&1; then
+            echo "expected a config error with no env"; exit 1
+          fi
+          grep -q "Invalid server configuration" startup.log
+          # Valid config (dummy values): /healthz needs no database
+          docker run -d --name smoke --read-only -p 3000:3000 \
+            -e DATABASE_URL=postgres://user:pass@127.0.0.1:5432/db \
+            -e ORIGIN=https://mira.example.org \
+            -e BETTER_AUTH_SECRET=0123456789abcdef0123456789abcdef \
+            -e OIDC_ISSUER_URL=https://git.example.org \
+            -e OIDC_CLIENT_ID=ci \
+            "$image"
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3000/healthz && break
+            sleep 1
+            test "$i" -lt 30 || { docker logs smoke; exit 1; }
+          done
+          docker stop smoke
+          test "$(docker inspect smoke --format '{{.State.ExitCode}}')" = 0
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          severity: HIGH,CRITICAL
+          # Fail only on vulnerabilities that have a fix available; unfixed OS-package CVEs in the
+          # base image would otherwise keep the pipeline red until Debian ships a patch.
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Log in to registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      # Pushes exactly the image that was smoke-tested and scanned. Tagged by commit SHA only: no
+      # `latest`, because a moving tag invites unpinned deployments and makes rollbacks ambiguous.
+      - name: Push image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker push '${{ steps.image.outputs.ref }}'

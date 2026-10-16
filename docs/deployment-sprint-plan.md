@@ -99,13 +99,13 @@ Order: A and D (and E) in parallel, then B, then C.
 | ---- | ----- |
 | [x]  | S1.1  |
 | [x]  | S1.2  |
-| [ ]  | S1.3  |
-| [ ]  | S1.4  |
+| [x]  | S1.3  |
+| [x]  | S1.4  |
 | [x]  | S1.5  |
 | [x]  | S1.6  |
 | [ ]  | S1.7  |
 | [ ]  | S1.8  |
-| [ ]  | S1.9  |
+| [x]  | S1.9  |
 | [ ]  | S1.10 |
 | [ ]  | S1.11 |
 
@@ -130,6 +130,13 @@ Also read by adapter-node (not validated by MIRA): `PORT`, `HOST`, `PROTOCOL_HEA
 **Probes:** `GET /healthz` (liveness, no DB), `GET /readyz` (readiness, `select 1`, 2s timeout, 503 on failure). Neither needs cookies and neither is logged.
 
 **Shutdown:** adapter-node traps SIGTERM/SIGINT, drains in-flight requests, then emits `sveltekit:shutdown`; the app flushes request logs (3s bound) and ends the DB pool (5s bound) there, and the process exits on its own.
+
+**Packaging as implemented in session B** (details in [docker.md](docker.md) and [migrations.md](migrations.md)):
+
+- **Image:** `<registry>/<owner>/mira`, built by `.github/workflows/ci.yml` and pushed to GHCR (`ghcr.io/<owner>/mira`) only on `main`, tagged with the full commit SHA (`mira:<40-hex-sha>`). There is no `latest` tag: pin the SHA or digest in the chart. Override the registry with the repo variable `IMAGE_NAME` and the secrets `REGISTRY`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`.
+- **App container:** default `CMD ["node", "build"]`, working directory `/app`, port 3000, UID/GID 1000 (`runAsNonRoot` works), writes nothing to disk (`readOnlyRootFilesystem: true`, no `/tmp` volume needed).
+- **Migration:** same image, `command: ["node", "migrate.js"]`, working directory `/app` (the image default; or set `MIGRATIONS_FOLDER`). Needs only `DATABASE_URL` (optional `DB_SSL`), not `ORIGIN` or the auth secrets. Prints one `migrate: applied <tag>` line per migration; a second run is a no-op; exit 1 on failure. Run as a pre-install/pre-upgrade Job or initContainer, never at app boot.
+- **Build facts:** `pnpm build` and `pnpm build:migrate` need no env vars; `pnpm check` is `scripts/check.mjs` (ignores third-party diagnostics in `node_modules`, `check:raw` is the plain command); `pnpm audit --prod --audit-level high` passes thanks to `overrides` in `pnpm-workspace.yaml`.
 
 **Sprint 1 exit demo:** `helm install` into an empty namespace, log in with OIDC, import a real ARC, `curl` a BrAPI endpoint, roll the deployment, and nothing is lost.
 
