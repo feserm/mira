@@ -1,0 +1,27 @@
+# Secrets and local config (also .env.example: not needed in the image)
+.env*
+
+# VCS, CI and editor files
+.git
+.github
+.vscode
+.claude
+.mcp.json
+.playwright-mcp
+
+# Dependencies and build output are produced inside the image
+node_modules
+build
+build-migrate
+.svelte-kit
+
+# Not needed at build or run time
+docs
+compose.yaml
+Dockerfile
+.dockerignore
+README.md
+AGENTS.md
+CLAUDE.md
+**/*.test.ts
+**/*.spec.ts
