@@ -49,6 +49,39 @@ jobs:
       # Production dependency tree only; fails on high or critical advisories.
       - run: pnpm audit --prod --audit-level high
 
+  chart:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    env:
+      CHART: deploy/helm/mira
+      KUBECONFORM_IMAGE: ghcr.io/yannh/kubeconform:v0.6.7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: Lint and render every example value set
+        run: |
+          set -eu
+          for extra in "" ci/single-replica-values.yaml ci/no-ingress-values.yaml; do
+            set --
+            [ -z "$extra" ] || set -- -f "$CHART/$extra"
+            helm lint "$CHART" -f "$CHART/ci/default-values.yaml" "$@"
+            helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" "$@" \
+              | docker run --rm -i "$KUBECONFORM_IMAGE" -strict -summary -
+          done
+      - name: Incomplete values must be rejected
+        run: |
+          set -eu
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set image.tag= 2> err.log; then
+            echo "expected a failure without image.tag"; exit 1
+          fi
+          grep -q "image.tag" err.log
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set secrets.database.name= 2> err.log; then
+            echo "expected a failure without a database secret"; exit 1
+          fi
+          grep -q "secrets.database.name" err.log
+
   image:
     name: Image build, scan and push
     needs: [verify, audit]
