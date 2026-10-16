@@ -1,14 +1,19 @@
 services:
   db:
-    image: postgres
+    # Pinned to the major version CI and the production cluster run (S1.10). Bump all three together.
+    image: postgres:17
     restart: always
     ports:
-      - 5432:5432
+      # Loopback only: the password below is a throwaway and must not be reachable from the network.
+      - 127.0.0.1:5432:5432
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: mysecretpassword
       POSTGRES_DB: local
     volumes:
-      - pgdata:/var/lib/postgresql
+      # postgres:17 keeps its data in /var/lib/postgresql/data (a VOLUME of the image). The 18+ images
+      # moved it to /var/lib/postgresql/<major>/docker and mount one level up; do not copy that path here.
+      # The volume is named pgdata17 so it can never be confused with a PostgreSQL 18 volume (`pgdata`).
+      - pgdata17:/var/lib/postgresql/data
 volumes:
-  pgdata:
+  pgdata17:

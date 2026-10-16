@@ -3,13 +3,14 @@ import postgres from 'postgres';
 import * as schema from './schema';
 import { config } from '$lib/server/env';
 
-const { poolMax, idleTimeoutSeconds, connectTimeoutSeconds, ssl } = config.db;
+const { poolMax, idleTimeoutSeconds, connectTimeoutSeconds, ssl, prepare } = config.db;
 
 const client = postgres(config.databaseUrl, {
 	max: poolMax,
 	idle_timeout: idleTimeoutSeconds,
 	connect_timeout: connectTimeoutSeconds,
-	ssl
+	ssl,
+	prepare
 });
 
 export const db = drizzle(client, { schema });

@@ -35,7 +35,8 @@ describe('validateEnv', () => {
 			poolMax: 4,
 			idleTimeoutSeconds: 30,
 			connectTimeoutSeconds: 5,
-			ssl: 'verify-full'
+			ssl: 'verify-full',
+			prepare: true
 		});
 	});
 
@@ -94,6 +95,14 @@ describe('validateEnv', () => {
 	it('maps DB_SSL=true to require and false to off', () => {
 		expect(validateEnv({ ...valid, DB_SSL: 'true' }).config.db.ssl).toBe('require');
 		expect(validateEnv({ ...valid, DB_SSL: 'false' }).config.db.ssl).toBeUndefined();
+	});
+
+	it('keeps prepared statements on unless DB_PREPARE=false', () => {
+		expect(validateEnv(valid).config.db.prepare).toBe(true);
+		expect(validateEnv({ ...valid, DB_PREPARE: 'true' }).config.db.prepare).toBe(true);
+		expect(validateEnv({ ...valid, DB_PREPARE: 'false' }).config.db.prepare).toBe(false);
+		const { errors } = validateEnv({ ...valid, DB_PREPARE: 'off' });
+		expect(errors).toEqual(['DB_PREPARE must be true or false']);
 	});
 
 	it('reports every missing required variable at once', () => {

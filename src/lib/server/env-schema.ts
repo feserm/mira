@@ -19,6 +19,8 @@ export interface ServerConfig {
 		idleTimeoutSeconds?: number;
 		connectTimeoutSeconds?: number;
 		ssl?: DbSsl;
+		/** Named prepared statements (postgres.js default). Off only behind a pooler that cannot track them. */
+		prepare: boolean;
 	};
 	/** Timeouts for every outbound HTTP call (PLANTdataHUB). */
 	http: {
@@ -134,6 +136,14 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 		}
 	}
 
+	let prepare = true;
+	const prepareRaw = get('DB_PREPARE').toLowerCase();
+	if (prepareRaw === 'false') {
+		prepare = false;
+	} else if (prepareRaw && prepareRaw !== 'true') {
+		errors.push('DB_PREPARE must be true or false');
+	}
+
 	const headersTimeoutSeconds = integer('HTTP_HEADERS_TIMEOUT', 1) ?? 30;
 	const totalTimeoutSeconds = integer('HTTP_TIMEOUT', 1) ?? 300;
 	if (headersTimeoutSeconds > totalTimeoutSeconds) {
@@ -154,7 +164,7 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 				clientSecret: get('OIDC_CLIENT_SECRET') || undefined,
 				scopes: (get('OIDC_SCOPES') || DEFAULT_SCOPES).split(/\s+/)
 			},
-			db: { poolMax, idleTimeoutSeconds, connectTimeoutSeconds, ssl },
+			db: { poolMax, idleTimeoutSeconds, connectTimeoutSeconds, ssl, prepare },
 			http: { headersTimeoutSeconds, totalTimeoutSeconds },
 			etl: {
 				concurrency: integer('ETL_CONCURRENCY', 1) ?? 1,
