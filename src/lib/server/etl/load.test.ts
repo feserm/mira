@@ -20,7 +20,12 @@ import {
 	type ArcSpec
 } from '$lib/server/test-support/arc-fixtures';
 import { useTestDb } from '$lib/server/test-support/db-mock';
-import { createDmlTestDb, hasTestDb, type DmlTestDb } from '$lib/server/test-support/dml-db';
+import {
+	createDmlTestDb,
+	hasTestDb,
+	placeholderWithoutDb,
+	type DmlTestDb
+} from '$lib/server/test-support/dml-db';
 import {
 	ENTITY_TABLES,
 	importArc,
@@ -476,3 +481,5 @@ describe.skipIf(!hasTestDb)('Load (real Postgres, DML-only role)', () => {
 		});
 	});
 });
+
+placeholderWithoutDb('Load (real Postgres, DML-only role)');

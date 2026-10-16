@@ -5,6 +5,7 @@
  *  4. the suite then connects as the app role, which has DML only.
  *  Needs TEST_DATABASE_URL with CREATEDB and CREATEROLE. Never touches the database named in the URL. */
 import { randomUUID } from 'node:crypto';
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -99,4 +100,14 @@ export async function createDmlTestDb(): Promise<DmlTestDb> {
 			await admin.end({ timeout: 5 });
 		}
 	};
+}
+
+/** Registers a visible placeholder test that runs only when TEST_DATABASE_URL is unset, so a skipped
+ *  integration suite shows up in the output instead of vanishing (same pattern as queue.test.ts). */
+export function placeholderWithoutDb(suite: string) {
+	describe.skipIf(hasTestDb)(suite, () => {
+		it(`is skipped: set TEST_DATABASE_URL to run ${suite}`, () => {
+			expect(hasTestDb).toBe(false);
+		});
+	});
 }

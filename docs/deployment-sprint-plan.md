@@ -235,6 +235,12 @@ Order: F and G in parallel, then H, then I; J can run alongside H and I; K last;
 
 Carried over from Sprint 1: backup and archiving alerts (J), the GitLab refresh-token race (G), CA re-issue and pod restart (L), agreed RTO/RPO (L).
 
+**S2.10 as implemented in session F (left open, see below)** (decisions and gaps: [testing.md](testing.md))
+
+- **Tests:** Transform on ARCtrl-generated fixtures; Load, the worker pipeline and the BrAPI handlers against a real Postgres as a DML-only role (migrated by the drizzle migrator, then `roles.sql`). Re-importing an ARC leaves every table's row count and row ids unchanged. A guard test fails CI when `TEST_DATABASE_URL` is missing.
+- **Safety net for G to I:** the "authenticated caller" is one helper (`test-support/brapi-event.ts`).
+- **Open:** (1) the first green run on GitHub Actions (only run locally against postgres:17); (2) a real, anonymised RO-Crate as a golden fixture (input listed for session F); (3) six `it.fails` tests record bugs, which need a decision and a fix: investigation dates are lost, NCBI lookup sends only the species epithet, a contact that gains an ORCID makes Load fail, removed studies are never pruned (maybe by design), `/serverinfo` omits germplasm and MCPD, a non-UUID id filter returns 500.
+
 ### Backlog / hardening (not sprint-committed)
 
 - `saveLayout` input validation and a size cap (M8).

@@ -6,7 +6,12 @@ import { contact, germplasm, location, study } from '$lib/server/db/schema';
 import { REPOS, seedBrapiFixture } from '$lib/server/test-support/brapi-fixture';
 import { callBrapi, type BrapiHandler } from '$lib/server/test-support/brapi-event';
 import { useTestDb } from '$lib/server/test-support/db-mock';
-import { createDmlTestDb, hasTestDb, type DmlTestDb } from '$lib/server/test-support/dml-db';
+import {
+	createDmlTestDb,
+	hasTestDb,
+	placeholderWithoutDb,
+	type DmlTestDb
+} from '$lib/server/test-support/dml-db';
 import { GET as germplasmGET } from './germplasm/+server';
 import { GET as locationsGET } from './locations/+server';
 import { GET as observationUnitsGET } from './observationunits/+server';
@@ -370,3 +375,5 @@ describe.skipIf(!hasTestDb)('BrAPI handlers: endpoints (real Postgres, DML-only 
 		);
 	});
 });
+
+placeholderWithoutDb('BrAPI handlers: endpoints (real Postgres, DML-only role)');

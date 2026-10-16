@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
-import { createDmlTestDb, hasTestDb, type DmlTestDb } from './dml-db';
+import { createDmlTestDb, hasTestDb, placeholderWithoutDb, type DmlTestDb } from './dml-db';
 import { etlJob, roCrateStaging } from '$lib/server/db/schema';
 
 // The integration suites run as the DML-only app role against a database migrated by the real
@@ -48,3 +48,5 @@ describe.skipIf(!hasTestDb)('test database: DML-only app role', () => {
 		);
 	});
 });
+
+placeholderWithoutDb('test database: DML-only app role');

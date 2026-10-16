@@ -13,7 +13,12 @@ import {
 	type BrapiHandler
 } from '$lib/server/test-support/brapi-event';
 import { useTestDb } from '$lib/server/test-support/db-mock';
-import { createDmlTestDb, hasTestDb, type DmlTestDb } from '$lib/server/test-support/dml-db';
+import {
+	createDmlTestDb,
+	hasTestDb,
+	placeholderWithoutDb,
+	type DmlTestDb
+} from '$lib/server/test-support/dml-db';
 import { GET as germplasmGET } from './germplasm/+server';
 import { GET as mcpdGET } from './germplasm/[germplasmDbId]/mcpd/+server';
 import { GET as locationsGET } from './locations/+server';
@@ -241,3 +246,5 @@ describe.skipIf(!hasTestDb)('BrAPI handlers: contract (real Postgres, DML-only r
 		expect(await t.db.select().from(study).where(eq(study.arcId, ARC_IDS.beta))).toHaveLength(2);
 	});
 });
+
+placeholderWithoutDb('BrAPI handlers: contract (real Postgres, DML-only role)');

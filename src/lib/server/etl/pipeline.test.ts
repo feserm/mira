@@ -3,7 +3,12 @@ import { eq } from 'drizzle-orm';
 import { roCrateStaging, type EtlJob } from '$lib/server/db/schema';
 import { arcSpec, roCrate } from '$lib/server/test-support/arc-fixtures';
 import { useTestDb } from '$lib/server/test-support/db-mock';
-import { createDmlTestDb, hasTestDb, type DmlTestDb } from '$lib/server/test-support/dml-db';
+import {
+	createDmlTestDb,
+	hasTestDb,
+	placeholderWithoutDb,
+	type DmlTestDb
+} from '$lib/server/test-support/dml-db';
 import { resetData, tableCounts } from '$lib/server/test-support/seed';
 import { waitFor } from '$lib/server/test-support/wait';
 import { executeJob } from './execute';
@@ -234,3 +239,5 @@ describe.skipIf(!hasTestDb)('ETL pipeline end to end (stubbed PLANTdataHUB)', ()
 		expect((await staging()).loadStatus).toBe('success');
 	});
 });
+
+placeholderWithoutDb('ETL pipeline end to end (stubbed PLANTdataHUB)');

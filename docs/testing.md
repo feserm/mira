@@ -91,3 +91,16 @@ Transform and Load handle Germplasm, Location and ObservationUnit. What is reall
 - BrAPI endpoints beyond `serverinfo`, `trials`, `studies`, `locations`, `observationunits`,
   `germplasm` and `germplasm/{id}/mcpd` (no `variables`, `observations`, `images`, `events`, ...).
 - No test of the web UI (`/arcs`), of token refresh against GitLab, or of PgBouncer.
+
+## 7. Bugs found while writing the tests (each is an `it.fails`, so fixing one turns its test red until `.fails` is removed)
+
+- Investigation submission and public-release dates never reach `datasetAuthorships` (ARCtrl 3.2.0 does not round-trip them through the RO-Crate). `transform.test.ts`
+- The NCBI crop-name lookup sends only the species epithet ("mays"), not the binomial. `transform.test.ts`
+- A contact imported without an ORCID that later gains one makes Load fail with a duplicate key on `email`. `load.test.ts`
+- Load never deletes: a study removed from the ARC stays and is served. Possibly by design. `load.test.ts`
+- `/serverinfo` does not list `germplasm` and `germplasm/{id}/mcpd`. `endpoints.test.ts`
+- A non-UUID id filter (`?studyDbId=x`) returns a 500. `endpoints.test.ts`
+
+Also: error responses are SvelteKit's `{ message }`, not a BrAPI `metadata.status` envelope (tests pin status
+codes only). The `brapi` skill mentioned in CLAUDE.md is not in the repository, so response shapes were
+asserted from BrAPI v2.1 as known, and from `src/lib/types/brapi`, not checked against the spec.
