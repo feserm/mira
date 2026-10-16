@@ -39,6 +39,7 @@ jobs:
       # Needs no env vars; this also proves the build works in a clean environment.
       - run: pnpm build
       - run: pnpm build:migrate
+      - run: pnpm build:worker
 
   audit:
     name: Dependency audit

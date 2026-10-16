@@ -13,6 +13,7 @@
 node_modules
 build
 build-migrate
+build-worker
 .svelte-kit
 
 # Not needed at build or run time
