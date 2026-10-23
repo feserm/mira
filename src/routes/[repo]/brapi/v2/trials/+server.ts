@@ -16,7 +16,12 @@ import { db } from '$lib/server/db';
 import { trial, program, trialContact, contact, study } from '$lib/server/db/schema';
 import { resolveArcId } from '$lib/server/brapi/arc';
 import type { BrapiTrial, BrapiContact } from '$lib/types/brapi/core';
-import { brapiJson, brapiListResponse, parseBrapiPagination } from '$lib/server/brapi/response';
+import {
+	brapiJson,
+	brapiListResponse,
+	parseBrapiPagination,
+	hasMalformedDbId
+} from '$lib/server/brapi/response';
 import type { RequestHandler } from './$types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -56,6 +61,7 @@ export const GET: RequestHandler = async (event) => {
 
 	const params = event.url.searchParams;
 	const { page, pageSize } = parseBrapiPagination(params);
+	if (hasMalformedDbId(params)) return brapiJson(brapiListResponse([], page, pageSize, 0));
 
 	const trialDbId = params.get('trialDbId');
 	const trialName = params.get('trialName');

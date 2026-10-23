@@ -1255,10 +1255,21 @@ async function fetchNcbiCommonName(species: string): Promise<string | undefined>
 	}
 }
 
-function commonCropNameForGermplasm(
+/** MIAPPE keeps Genus and Species in separate columns, but NCBI matches on the full scientific name.
+ *  A species that already carries its genus ("Zea mays") is used as is. */
+function scientificName(
+	genus: string | null | undefined,
 	species: string | null | undefined
-): Promise<string | undefined> {
-	const key = species?.trim().toLowerCase();
+): string | undefined {
+	const sp = species?.trim();
+	if (!sp) return undefined;
+	const g = genus?.trim();
+	if (!g || /\s/.test(sp)) return sp;
+	return `${g} ${sp}`;
+}
+
+function commonCropNameForGermplasm(name: string | undefined): Promise<string | undefined> {
+	const key = name?.trim().toLowerCase();
 	if (!key) return Promise.resolve(undefined);
 	let cached = commonCropNameCache.get(key);
 	if (!cached) {
@@ -1648,7 +1659,9 @@ export async function transformRoCrate(
 			// but only as a last resort: materialSourceDoi (via BRAPI_GERMPLASM_FROM_SOURCE_SETTERS
 			// above) is a real externally-authored identifier when the source data has one.
 			germplasmDraft.commonCropName =
-				(await commonCropNameForGermplasm(germplasmDraft.species)) ?? '';
+				(await commonCropNameForGermplasm(
+					scientificName(germplasmDraft.genus, germplasmDraft.species)
+				)) ?? '';
 			germplasmDraft.germplasmPui =
 				germplasmDraft.germplasmPui ??
 				(germplasmDraft.externalReferences as ExternalReference[] | undefined)?.[0]?.referenceId ??

@@ -4,7 +4,7 @@ import { db } from '$lib/server/db';
 import { germplasm, observationUnit } from '$lib/server/db/schema';
 import { resolveArcId } from '$lib/server/brapi/arc';
 import type { GermplasmMcpd, StorageTypeCode } from '$lib/types/brapi/germplasm';
-import { brapiJson, brapiSingleResponse } from '$lib/server/brapi/response';
+import { brapiJson, brapiSingleResponse, isDbId } from '$lib/server/brapi/response';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
@@ -12,6 +12,7 @@ export const GET: RequestHandler = async (event) => {
 
 	const arcId = await resolveArcId(event.params.repo);
 	const { germplasmDbId } = event.params;
+	if (!isDbId(germplasmDbId)) error(404, `Unknown germplasmDbId: "${germplasmDbId}"`);
 
 	// `germplasm` isn't arc-scoped (see the germplasm list endpoint), so membership in this ARC
 	// is defined by being referenced from one of the ARC's observation units.

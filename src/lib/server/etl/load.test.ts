@@ -194,16 +194,42 @@ describe.skipIf(!hasTestDb)('Load (real Postgres, DML-only role)', () => {
 			expect(rich.email).toBe('rich.roe@new.example.org');
 		});
 
-		// DESIGN QUESTION (found in S2.10): Load only upserts. A study (or contact link) removed from the
-		// ARC stays in the database and keeps being served by the BrAPI endpoints. If keeping removed data
-		// is intended, delete this test and document it; otherwise Load needs a prune step. Remove `.fails`
-		// when decided.
-		it.fails('removes a study that was deleted from the ARC on re-import', async () => {
+		// The ARC is the source of truth: Load prunes what the ARC no longer contains.
+		it('removes a study that was deleted from the ARC on re-import', async () => {
 			await importFixture(1);
 			const withoutS2 = arcSpec();
 			withoutS2.studies = withoutS2.studies.filter((s) => s.identifier !== 'S2');
 			await importFixture(1, withoutS2);
 			expect(await count('study')).toBe(1);
+		});
+
+		it('prunes the removed study and contact links, and only in its own ARC', async () => {
+			await importFixture(1);
+			await importFixture(2, arcSpec({ identifier: 'INV2', title: 'Second trial' }));
+			const before = await tableCounts(t.db);
+
+			const withoutS2 = arcSpec();
+			withoutS2.studies = withoutS2.studies.filter((s) => s.identifier !== 'S2');
+			withoutS2.contacts = withoutS2.contacts.filter((c) => c.email !== POE.email);
+			await importFixture(1, withoutS2);
+			const after = await tableCounts(t.db);
+
+			expect(after.study).toBe(before.study - 1);
+			expect(after.trial_contact).toBe(before.trial_contact - 1);
+			// shared rows stay, the other ARC is untouched
+			expect(after.contact).toBe(before.contact);
+			expect(after.trial).toBe(before.trial);
+			const [{ n }] = await t.db.execute<{ n: number }>(
+				sql`select count(*)::int as n from study where arc_id = 2`
+			);
+			expect(n).toBe(2);
+		});
+
+		it('is a no-op for an unchanged re-import (nothing pruned)', async () => {
+			await importFixture(1);
+			const before = await tableCounts(t.db);
+			await importFixture(1);
+			expect(await tableCounts(t.db)).toEqual(before);
 		});
 	});
 
@@ -320,14 +346,13 @@ describe.skipIf(!hasTestDb)('Load (real Postgres, DML-only role)', () => {
 			expect(await count('study_contact')).toBe(2);
 		});
 
-		// BUG (found in S2.10): a contact that was imported without an ORCID and later gets one in the ARC
-		// makes Load fail permanently. The upsert targets `orcid`, finds no row, tries to INSERT and hits
-		// the unique constraint on `email` of the existing row, so the whole transaction aborts with a
-		// duplicate key error and the ARC can never be re-imported. Remove `.fails` when fixed.
-		it.fails('accepts a contact that gains an ORCID between two imports', async () => {
+		// A contact imported without an ORCID that later gains one is the same row, not a duplicate email.
+		it('accepts a contact that gains an ORCID between two imports', async () => {
 			await load(1, [{ name: 'Pat Poe', email: POE.email }]);
 			await load(1, [{ name: 'Pat Poe', email: POE.email, orcid: '0000-0004-0000-0001' }]);
 			expect(await count('contact')).toBe(1);
+			const [row] = await t.db.select().from(contact).where(eq(contact.email, POE.email!));
+			expect(row.orcid).toBe('0000-0004-0000-0001');
 		});
 
 		it('still links people with no usable name, once per occurrence', async () => {

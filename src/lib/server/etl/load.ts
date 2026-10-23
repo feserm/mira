@@ -1,4 +1,4 @@
-import { getTableColumns, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, notInArray, sql } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { db } from '$lib/server/db';
 import {
@@ -57,6 +57,23 @@ async function upsertArcScoped(
 }
 
 /**
+ * The ARC is the source of truth, so an arc-scoped row whose source id is no longer in the import
+ * was removed from the ARC and must stop being served. Contacts, locations and germplasm are shared
+ * with other ARCs and are never deleted here; only their links to this ARC are pruned.
+ */
+async function pruneArcScoped(
+	tx: Tx,
+	table: ArcScopedTable,
+	arcId: number,
+	keep: (string | null | undefined)[]
+): Promise<void> {
+	const ids = keep.filter((id): id is string => !!id);
+	await tx
+		.delete(table)
+		.where(and(eq(table.arcId, arcId), ids.length ? notInArray(table.sourceId, ids) : undefined));
+}
+
+/**
  * Contacts are shared reference rows, not arc-scoped: they dedupe globally, preferring ORCID,
  * then email, then name + institute — in that order of how reliably ISA-Tab contacts actually
  * carry each one (ORCID is rare, email usually present, name always present). Nulls never
@@ -67,6 +84,23 @@ async function upsertArcScoped(
  * right trial/study would be guesswork.
  */
 async function upsertContact(tx: Tx, row: NewContact): Promise<string> {
+	// A contact first imported without an ORCID and since given one has no ORCID match, but its
+	// email row exists: the plain insert below would hit the unique email constraint and abort the
+	// whole Load. Update that row (it gains the ORCID) instead.
+	if (row.orcid && row.email) {
+		const [byOrcid] = await tx
+			.select({ id: contact.id })
+			.from(contact)
+			.where(eq(contact.orcid, row.orcid));
+		if (!byOrcid) {
+			const [byEmail] = await tx
+				.update(contact)
+				.set(row)
+				.where(eq(contact.email, row.email))
+				.returning({ id: contact.id });
+			if (byEmail) return byEmail.id;
+		}
+	}
 	const insert = tx.insert(contact).values(row);
 	const conflict = row.orcid
 		? { target: contact.orcid }
@@ -157,8 +191,10 @@ export async function loadEntities(result: TransformResult, arcId: number): Prom
 		}
 		const trialId = trialRows[0]?.id;
 
+		const trialContactIds: string[] = [];
 		for (const contactRow of result.contacts) {
 			const contactId = await upsertContact(tx, contactRow);
+			trialContactIds.push(contactId);
 			await tx
 				.insert(trialContact)
 				.values({ trialId: trialId!, contactId })
@@ -190,12 +226,14 @@ export async function loadEntities(result: TransformResult, arcId: number): Prom
 		);
 		const studyIdBySourceId = new Map(studyRows.map((s) => [s.sourceId, s.id]));
 
+		const studyContactKeys = new Set<string>();
 		for (const { studySourceId, contact: contactRow } of result.studyContacts) {
 			const studyId = studyIdBySourceId.get(studySourceId);
 			if (!studyId) {
 				throw new Error(`Study "${studySourceId}" not found while linking its contacts`);
 			}
 			const contactId = await upsertContact(tx, contactRow);
+			studyContactKeys.add(`${studyId}:${contactId}`);
 			await tx
 				.insert(studyContact)
 				.values({ studyId, contactId })
@@ -260,5 +298,65 @@ export async function loadEntities(result: TransformResult, arcId: number): Prom
 		await upsertArcScoped(tx, observation, result.observations);
 		await upsertArcScoped(tx, image, result.images);
 		await upsertArcScoped(tx, event, result.events);
+
+		// Prune what the ARC no longer contains, children before parents (observation units and
+		// observations reference their study without a cascade).
+		await pruneArcScoped(
+			tx,
+			observation,
+			arcId,
+			result.observations.map((r) => r.sourceId)
+		);
+		await pruneArcScoped(
+			tx,
+			image,
+			arcId,
+			result.images.map((r) => r.sourceId)
+		);
+		await pruneArcScoped(
+			tx,
+			event,
+			arcId,
+			result.events.map((r) => r.sourceId)
+		);
+		await pruneArcScoped(
+			tx,
+			observationUnit,
+			arcId,
+			result.observationUnits.map((r) => r.sourceId)
+		);
+		await pruneArcScoped(
+			tx,
+			study,
+			arcId,
+			result.studies.map((r) => r.sourceId)
+		);
+
+		// Contact links of this ARC's trial and studies (a study deleted above took its links with it).
+		if (trialId) {
+			await tx
+				.delete(trialContact)
+				.where(
+					and(
+						eq(trialContact.trialId, trialId),
+						trialContactIds.length ? notInArray(trialContact.contactId, trialContactIds) : undefined
+					)
+				);
+		}
+		const arcStudyIds = [...studyIdBySourceId.values()];
+		if (arcStudyIds.length) {
+			const existing = await tx
+				.select()
+				.from(studyContact)
+				.where(inArray(studyContact.studyId, arcStudyIds));
+			for (const link of existing) {
+				if (studyContactKeys.has(`${link.studyId}:${link.contactId}`)) continue;
+				await tx
+					.delete(studyContact)
+					.where(
+						and(eq(studyContact.studyId, link.studyId), eq(studyContact.contactId, link.contactId))
+					);
+			}
+		}
 	});
 }

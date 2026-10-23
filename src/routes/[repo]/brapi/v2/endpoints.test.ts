@@ -342,11 +342,9 @@ describe.skipIf(!hasTestDb)('BrAPI handlers: endpoints (real Postgres, DML-only 
 			expect((await get(serverinfoGET, { contentType: 'application/pdf' })).status).toBe(400);
 		});
 
-		// BUG (found in S2.10): /serverinfo is how BrAPI clients discover what a server supports, but it
-		// does not advertise `germplasm` and `germplasm/{germplasmDbId}/mcpd`, which are implemented.
 		// The expected list is derived from the route directories, so a new endpoint without a CALLS
-		// entry fails here. Remove `.fails` when the list is complete.
-		it.fails('advertises every endpoint that is implemented', async () => {
+		// entry fails here.
+		it('advertises every endpoint that is implemented', async () => {
 			const implemented = Object.keys(import.meta.glob('./**/+server.ts'))
 				.map((p) =>
 					p
@@ -363,16 +361,19 @@ describe.skipIf(!hasTestDb)('BrAPI handlers: endpoints (real Postgres, DML-only 
 	});
 
 	describe('ids that are not UUIDs', () => {
-		// BUG (found in S2.10): an id filter that is not a UUID reaches Postgres, which rejects it, and the
-		// client gets a 500. A BrAPI client asking for an unknown id should get an empty list (or 400/404),
-		// never a server error. Affects every *DbId filter. Remove `.fails` when fixed.
-		it.fails(
-			'answers an unknown, non-UUID id filter with an empty list or a 4xx, not a 500',
-			async () => {
-				const res = await get(studiesGET, { studyDbId: 'not-a-uuid' });
-				expect(res.status).toBeLessThan(500);
-			}
-		);
+		it.each([
+			['studies', () => studiesGET, 'studyDbId'],
+			['studies', () => studiesGET, 'trialDbId'],
+			['trials', () => trialsGET, 'trialDbId'],
+			['locations', () => locationsGET, 'locationDbId'],
+			['observationunits', () => observationUnitsGET, 'studyDbId'],
+			['germplasm', () => germplasmGET, 'germplasmDbId']
+		])('answers a non-UUID filter on %s (%s) with an empty page, not a 500', async (_n, h, key) => {
+			const res = await get(h(), { [key]: 'not-a-uuid' });
+			expect(res.status).toBe(200);
+			expect(res.body.result.data).toEqual([]);
+			expect(res.body.metadata.pagination.totalCount).toBe(0);
+		});
 	});
 });
 

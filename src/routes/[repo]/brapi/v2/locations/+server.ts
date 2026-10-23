@@ -5,7 +5,12 @@ import { db } from '$lib/server/db';
 import { location, study, trial } from '$lib/server/db/schema';
 import { resolveArcId } from '$lib/server/brapi/arc';
 import type { BrapiLocation } from '$lib/types/brapi/core';
-import { brapiJson, brapiListResponse, parseBrapiPagination } from '$lib/server/brapi/response';
+import {
+	brapiJson,
+	brapiListResponse,
+	parseBrapiPagination,
+	hasMalformedDbId
+} from '$lib/server/brapi/response';
 import type { RequestHandler } from './$types';
 
 const parentLocation = alias(location, 'parent_location');
@@ -17,6 +22,7 @@ export const GET: RequestHandler = async (event) => {
 
 	const params = event.url.searchParams;
 	const { page, pageSize } = parseBrapiPagination(params);
+	if (hasMalformedDbId(params)) return brapiJson(brapiListResponse([], page, pageSize, 0));
 
 	const commonCropName = params.get('commonCropName');
 	const locationDbId = params.get('locationDbId');

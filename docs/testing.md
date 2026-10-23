@@ -92,15 +92,13 @@ Transform and Load handle Germplasm, Location and ObservationUnit. What is reall
   `germplasm` and `germplasm/{id}/mcpd` (no `variables`, `observations`, `images`, `events`, ...).
 - No test of the web UI (`/arcs`), of token refresh against GitLab, or of PgBouncer.
 
-## 7. Bugs found while writing the tests (each is an `it.fails`, so fixing one turns its test red until `.fails` is removed)
+## 7. Bugs found while writing the tests
 
-- Investigation submission and public-release dates never reach `datasetAuthorships` (ARCtrl 3.2.0 does not round-trip them through the RO-Crate). `transform.test.ts`
-- The NCBI crop-name lookup sends only the species epithet ("mays"), not the binomial. `transform.test.ts`
-- A contact imported without an ORCID that later gains one makes Load fail with a duplicate key on `email`. `load.test.ts`
-- Load never deletes: a study removed from the ARC stays and is served. Possibly by design. `load.test.ts`
-- `/serverinfo` does not list `germplasm` and `germplasm/{id}/mcpd`. `endpoints.test.ts`
-- A non-UUID id filter (`?studyDbId=x`) returns a 500. `endpoints.test.ts`
+Five of the six were fixed after the first green CI run; the decisions are recorded here.
 
-Also: error responses are SvelteKit's `{ message }`, not a BrAPI `metadata.status` envelope (tests pin status
-codes only). The `brapi` skill mentioned in CLAUDE.md is not in the repository, so response shapes were
-asserted from BrAPI v2.1 as known, and from `src/lib/types/brapi`, not checked against the spec.
+- **Open, accepted:** investigation submission and public-release dates never reach `datasetAuthorships`. ARCtrl 3.2.0 does not round-trip them through the RO-Crate, so this is an upstream limitation. The `it.fails` in `transform.test.ts` stays as a tripwire: when an ARCtrl upgrade fixes it, the test goes red and `.fails` comes off.
+- **Fixed:** the NCBI crop-name lookup sends the binomial (genus + species) instead of the species epithet. `transform.test.ts`
+- **Fixed:** a contact that gains an ORCID between imports updates its email row instead of failing with a duplicate key. A contact that only gains an email after being identified by name + institute is not covered. `load.test.ts`
+- **Fixed (by decision):** Load prunes. After the upserts it deletes the ARC's studies, observation units, observations, images and events that are no longer in the ARC, and the trial and study contact links that are gone. Contacts, locations and germplasm are shared and never deleted. `load.test.ts`
+- **Fixed:** `/serverinfo` lists `germplasm` and `germplasm/{germplasmDbId}/mcpd`; a test derives the expected list from the route directories. `endpoints.test.ts`
+- **Fixed:** a `*DbId` filter that is not a UUID returns an empty page (`hasMalformedDbId` in `response.ts`), and a non-UUID `germplasmDbId` on the mcpd route is a 404, instead of a 500. `endpoints.test.ts`

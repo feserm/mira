@@ -237,12 +237,9 @@ describe('transformRoCrate', () => {
 			expect(germplasm.map((g) => g.commonCropName)).toEqual(['Maize', '']);
 		});
 
-		// BUG (found in S2.10): the lookup sends only the species epithet ("mays"), because genus is a
-		// separate characteristic and only `species` is passed on, but the comment on fetchNcbiCommonName
-		// says the full binomial is required ("Zea mays"). NCBI matches on the full scientific name, so
-		// for MIAPPE-style data (Genus and Species as separate columns) the crop name is mostly empty.
-		// A unique species keeps this independent of the per-process lookup cache. Remove `.fails` when fixed.
-		it.fails('asks NCBI for the full binomial (genus + species)', async () => {
+		// MIAPPE keeps genus and species apart, NCBI matches the full binomial. A unique species keeps this
+		// independent of the per-process lookup cache.
+		it('asks NCBI for the full binomial (genus + species)', async () => {
 			const spec = arcSpec();
 			spec.studies[0] = {
 				...spec.studies[0],

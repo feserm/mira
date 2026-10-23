@@ -55,6 +55,26 @@ export function parseBrapiPagination(searchParams: URLSearchParams): {
 	return { page, pageSize };
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isDbId(value: string): boolean {
+	return UUID.test(value);
+}
+
+/**
+ * True if any `*DbId` filter is not a UUID. Every id this server hands out is a UUID, so such a
+ * filter can match nothing, and passing it on would make Postgres reject the query with a 500.
+ * List handlers answer an empty page instead, which is what BrAPI clients expect for no match.
+ * `observationUnitLevelRelationshipDbId` is compared as text, not as a uuid column.
+ */
+export function hasMalformedDbId(searchParams: URLSearchParams): boolean {
+	for (const [key, value] of searchParams) {
+		if (key.endsWith('DbId') && key !== 'observationUnitLevelRelationshipDbId' && !isDbId(value))
+			return true;
+	}
+	return false;
+}
+
 /** Wraps a page of results in the BrAPI standard list response envelope. */
 export function brapiListResponse<T>(
 	data: T[],

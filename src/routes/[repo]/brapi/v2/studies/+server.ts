@@ -15,7 +15,12 @@ import {
 } from '$lib/server/db/schema';
 import { resolveArcId } from '$lib/server/brapi/arc';
 import type { BrapiStudy, BrapiContact } from '$lib/types/brapi/core';
-import { brapiJson, brapiListResponse, parseBrapiPagination } from '$lib/server/brapi/response';
+import {
+	brapiJson,
+	brapiListResponse,
+	parseBrapiPagination,
+	hasMalformedDbId
+} from '$lib/server/brapi/response';
 import type { RequestHandler } from './$types';
 
 /**
@@ -56,6 +61,7 @@ export const GET: RequestHandler = async (event) => {
 
 	const params = event.url.searchParams;
 	const { page, pageSize } = parseBrapiPagination(params);
+	if (hasMalformedDbId(params)) return brapiJson(brapiListResponse([], page, pageSize, 0));
 
 	const commonCropName = params.get('commonCropName');
 	const germplasmDbId = params.get('germplasmDbId');
