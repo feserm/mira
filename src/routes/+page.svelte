@@ -221,7 +221,7 @@
 			</button>
 			<ul class="menu dropdown-content z-1 mb-3 w-56 rounded-box bg-base-100 p-2 shadow-lg">
 				<li class="menu-title">Add component</li>
-				{#each Object.keys(mappings) as type (type)}
+				{#each Object.keys(mappings).filter((t) => data.admin || t !== 'UserStats') as type (type)}
 					<li>
 						<button onclick={() => addComponent(type as ComponentType)}
 							>{beautifyComponentType(type)}</button
