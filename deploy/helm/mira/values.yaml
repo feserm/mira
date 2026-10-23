@@ -44,6 +44,11 @@ config:
   #     unless `use-forwarded-headers` is enabled and an untrusted hop sits in front of it).
   origin: ''
 
+  # Comma separated e-mail addresses (as PLANTdataHUB reports them) that become admin at sign-in:
+  # the operations role (dashboard), not data access. Everyone else is a plain user. Not secret.
+  # Removing an address demotes that user at their next sign-in. Empty = nobody is admin.
+  adminEmails: ''
+
   oidc:
     # REQUIRED. The PLANTdataHUB (GitLab) base URL, no trailing slash. Not secret.
     issuerUrl: ''

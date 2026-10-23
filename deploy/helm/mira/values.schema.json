@@ -62,6 +62,11 @@
 					"pattern": "^(https://[^/\\s]+)?$",
 					"description": "https://host, no path, no trailing slash"
 				},
+				"adminEmails": {
+					"type": "string",
+					"pattern": "^([^,\\s@]+@[^,\\s@]+(\\s*,\\s*[^,\\s@]+@[^,\\s@]+)*)?$",
+					"description": "comma separated e-mail addresses made admin at sign-in"
+				},
 				"oidc": {
 					"type": "object",
 					"required": ["issuerUrl", "clientId"],

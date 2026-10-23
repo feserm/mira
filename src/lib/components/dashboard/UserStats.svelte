@@ -3,7 +3,7 @@
 		id: string;
 		name: string;
 		email: string;
-		image: string | null;
+		role: string | null;
 		lastAccountUpdate: string | Date | null;
 	};
 
@@ -29,13 +29,13 @@
 					<tr>
 						<td>
 							<div class="flex items-center gap-3">
-								<div class="avatar">
-									<div class="mask h-12 w-12 mask-squircle">
-										{#if user.image}<img src={user.image} alt="" />{/if}
-									</div>
-								</div>
 								<div>
-									<div class="font-bold">{user.name}</div>
+									<div class="font-bold">
+										{user.name}
+										{#if user.role === 'admin'}<span class="badge badge-sm badge-primary"
+												>admin</span
+											>{/if}
+									</div>
 									<div class="text-sm opacity-50">{user.email}</div>
 								</div>
 							</div>

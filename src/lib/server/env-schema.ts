@@ -8,6 +8,8 @@ export interface ServerConfig {
 	databaseUrl: string;
 	origin: string;
 	authSecret: string;
+	/** Lower-cased e-mail addresses made admin on sign-in (`ADMIN_EMAILS`). Empty: nobody is admin. */
+	adminEmails: string[];
 	oidc: {
 		issuerUrl: string;
 		clientId: string;
@@ -96,6 +98,14 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 		errors.push(`BETTER_AUTH_SECRET must be at least ${MIN_SECRET_LENGTH} characters`);
 	}
 
+	const adminEmails = get('ADMIN_EMAILS')
+		.split(',')
+		.map((e) => e.trim().toLowerCase())
+		.filter(Boolean);
+	if (adminEmails.some((e) => !/^[^\s@]+@[^\s@]+$/.test(e))) {
+		errors.push('ADMIN_EMAILS must be a comma separated list of e-mail addresses');
+	}
+
 	const issuerUrl = required('OIDC_ISSUER_URL');
 	if (issuerUrl) {
 		if (!parseUrl(issuerUrl)) {
@@ -158,6 +168,7 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 			databaseUrl,
 			origin,
 			authSecret,
+			adminEmails,
 			oidc: {
 				issuerUrl,
 				clientId,

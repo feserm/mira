@@ -111,20 +111,21 @@ Order: A and D (and E) in parallel, then B, then C.
 
 **Env vars as implemented in session A** (validated at boot by `src/lib/server/env.ts`; full docs in `.env.example`):
 
-| Variable             | Required | Notes                                                                                                |
-| -------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`       | yes      | `postgres://` or `postgresql://` URL                                                                 |
-| `ORIGIN`             | yes      | scheme + host (+ port), no path or trailing slash; `https` unless `NODE_ENV` is `development`/`test` |
-| `BETTER_AUTH_SECRET` | yes      | at least 32 chars                                                                                    |
-| `OIDC_ISSUER_URL`    | yes      | no trailing slash, no `/.well-known` suffix                                                          |
-| `OIDC_CLIENT_ID`     | yes      |                                                                                                      |
-| `OIDC_CLIENT_SECRET` | no       | empty = public client                                                                                |
-| `OIDC_SCOPES`        | no       | space separated, default `openid profile email`                                                      |
-| `DB_POOL_MAX`        | no       | default 10 per process                                                                               |
-| `DB_IDLE_TIMEOUT`    | no       | seconds, default never                                                                               |
-| `DB_CONNECT_TIMEOUT` | no       | seconds, default 30                                                                                  |
-| `DB_SSL`             | no       | `true`/`require`/`allow`/`prefer`/`verify-full`; unset or `false` = off                              |
-| `DB_PREPARE`         | no       | `true` (default) or `false`; only for a PgBouncer older than 1.21 (session E)                        |
+| Variable             | Required | Notes                                                                                                     |
+| -------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | yes      | `postgres://` or `postgresql://` URL                                                                      |
+| `ORIGIN`             | yes      | scheme + host (+ port), no path or trailing slash; `https` unless `NODE_ENV` is `development`/`test`      |
+| `BETTER_AUTH_SECRET` | yes      | at least 32 chars                                                                                         |
+| `OIDC_ISSUER_URL`    | yes      | no trailing slash, no `/.well-known` suffix                                                               |
+| `OIDC_CLIENT_ID`     | yes      |                                                                                                           |
+| `OIDC_CLIENT_SECRET` | no       | empty = public client                                                                                     |
+| `OIDC_SCOPES`        | no       | space separated, default `openid profile email`                                                           |
+| `ADMIN_EMAILS`       | no       | comma separated e-mails made admin at sign-in, everyone else is a user (S2.2); chart `config.adminEmails` |
+| `DB_POOL_MAX`        | no       | default 10 per process                                                                                    |
+| `DB_IDLE_TIMEOUT`    | no       | seconds, default never                                                                                    |
+| `DB_CONNECT_TIMEOUT` | no       | seconds, default 30                                                                                       |
+| `DB_SSL`             | no       | `true`/`require`/`allow`/`prefer`/`verify-full`; unset or `false` = off                                   |
+| `DB_PREPARE`         | no       | `true` (default) or `false`; only for a PgBouncer older than 1.21 (session E)                             |
 
 Also read by adapter-node (not validated by MIRA): `PORT`, `HOST`, `PROTOCOL_HEADER`, `HOST_HEADER`, `ADDRESS_HEADER`, `XFF_DEPTH`, `SHUTDOWN_TIMEOUT` (seconds, default 30). Set `terminationGracePeriodSeconds` above `SHUTDOWN_TIMEOUT` plus a few seconds for the log flush and pool close.
 

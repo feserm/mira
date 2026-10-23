@@ -19,6 +19,21 @@ describe('validateEnv', () => {
 		expect(config.oidc.scopes).toEqual(['openid', 'profile', 'email']);
 	});
 
+	it('parses ADMIN_EMAILS as a trimmed, lower-cased list, empty by default', () => {
+		expect(validateEnv(valid).config.adminEmails).toEqual([]);
+		const { config, errors } = validateEnv({
+			...valid,
+			ADMIN_EMAILS: ' Admin@Example.org , ops@example.org,, '
+		});
+		expect(errors).toEqual([]);
+		expect(config.adminEmails).toEqual(['admin@example.org', 'ops@example.org']);
+	});
+
+	it('rejects an ADMIN_EMAILS entry that is not an e-mail address, without echoing it', () => {
+		const { errors } = validateEnv({ ...valid, ADMIN_EMAILS: 'admin@example.org, not-an-email' });
+		expect(errors).toEqual(['ADMIN_EMAILS must be a comma separated list of e-mail addresses']);
+	});
+
 	it('parses optional settings', () => {
 		const { config, errors } = validateEnv({
 			...valid,

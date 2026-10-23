@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth/minimal';
 import { config } from '$lib/server/env';
-import { baseAuthOptions, oidcPlugin } from '$lib/server/auth-options';
+import { baseAuthOptions, sharedPlugins } from '$lib/server/auth-options';
 import { findOidcAccountId } from '$lib/server/oidc-account';
 import { TokenError } from './errors';
 import { FetchTimeoutError } from '$lib/server/fetch-timeout';
@@ -11,7 +11,7 @@ import { FetchTimeoutError } from '$lib/server/fetch-timeout';
 const workerAuth = betterAuth({
 	...baseAuthOptions,
 	secret: config.authSecret,
-	plugins: [oidcPlugin()]
+	plugins: sharedPlugins()
 });
 
 export const SIGN_IN_AGAIN =
