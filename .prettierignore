@@ -11,3 +11,6 @@ bun.lockb
 
 # Helm templates are not valid YAML until rendered
 /deploy/helm/*/templates/
+
+# Golden test fixtures are kept byte for byte
+/src/lib/server/test-support/fixtures/

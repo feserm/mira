@@ -235,13 +235,14 @@ Order: F and G in parallel, then H, then I; J can run alongside H and I; K last;
 
 Carried over from Sprint 1: backup and archiving alerts (J), the GitLab refresh-token race (G), CA re-issue and pod restart (L), agreed RTO/RPO (L).
 
-**S2.10 as implemented in session F (left open, see below)** (decisions and gaps: [testing.md](testing.md))
+**S2.10 as implemented in session F** (decisions and gaps: [testing.md](testing.md))
 
 - **Tests:** Transform on ARCtrl-generated fixtures; Load, the worker pipeline and the BrAPI handlers against a real Postgres as a DML-only role (migrated by the drizzle migrator, then `roles.sql`). Re-importing an ARC leaves every table's row count and row ids unchanged. A guard test fails CI when `TEST_DATABASE_URL` is missing.
 - **Safety net for G to I:** the "authenticated caller" is one helper (`test-support/brapi-event.ts`).
 - **CI:** first green run on GitHub Actions on `main` (run 39957345284: verify with 236 passed, 6 expected fail, 7 skipped placeholders; chart, postgres, audit and image jobs green; the image was built, scanned and pushed). It needed `trivy-action` re-pinned, as `0.28.0` no longer resolved.
 - **Bugs:** decided and fixed (NCBI binomial, contact gaining an ORCID, pruning in Load, `/serverinfo` calls, non-UUID id filters); the investigation-dates bug is accepted as an upstream ARCtrl limitation and stays as an `it.fails` tripwire (see testing.md section 7).
-- **Open:** a real, anonymised RO-Crate as a golden fixture (input listed for session F).
+- **Golden fixture:** the Phenosphere ARC, anonymised, with Transform, Load, idempotency and pruning tests (`etl/golden.test.ts`, testing.md section 8).
+- **Open:** none for S2.10 except the investigation-dates tripwire, which waits for ARCtrl.
 
 ### Backlog / hardening (not sprint-committed)
 

@@ -102,3 +102,9 @@ Five of the six were fixed after the first green CI run; the decisions are recor
 - **Fixed (by decision):** Load prunes. After the upserts it deletes the ARC's studies, observation units, observations, images and events that are no longer in the ARC, and the trial and study contact links that are gone. Contacts, locations and germplasm are shared and never deleted. `load.test.ts`
 - **Fixed:** `/serverinfo` lists `germplasm` and `germplasm/{germplasmDbId}/mcpd`; a test derives the expected list from the route directories. `endpoints.test.ts`
 - **Fixed:** a `*DbId` filter that is not a UUID returns an empty page (`hasMalformedDbId` in `response.ts`), and a non-UUID `germplasmDbId` on the mcpd route is a 404, instead of a 500. `endpoints.test.ts`
+
+## 8. Golden fixture: a real RO-Crate
+
+`src/lib/server/test-support/fixtures/phenosphere-ro-crate.json` is the IPK Phenosphere maize benchmark ARC (4380 graph nodes, 7 studies, 11 accessions, 1035 observation units). The e-mail addresses and ORCIDs of its two registered contacts are replaced by placeholders; everything else is as exported, and a test fails if a real address comes back. `etl/golden.test.ts` transforms it (about 4 s, so the tests share one run) and, against Postgres, loads it, re-imports it with unchanged counts and row ids, and prunes a removed study.
+
+Not covered by this crate: observations, observation variables, images and events (Transform emits none from it yet).
