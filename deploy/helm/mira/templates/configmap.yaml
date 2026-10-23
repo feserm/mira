@@ -12,6 +12,9 @@ data:
   {{- with .Values.config.oidc.scopes }}
   OIDC_SCOPES: {{ . | quote }}
   {{- end }}
+  {{- with .Values.config.adminEmails }}
+  ADMIN_EMAILS: {{ . | quote }}
+  {{- end }}
   SHUTDOWN_TIMEOUT: {{ .Values.config.shutdownTimeout | quote }}
   {{- with .Values.config.db.poolMax }}
   DB_POOL_MAX: {{ . | quote }}

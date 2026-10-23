@@ -6,7 +6,7 @@
 	const session = authClient.useSession();
 
 	function login() {
-		authClient.signIn.oauth2({ providerId: 'oidc', callbackURL: '/' });
+		authClient.signIn.oauth2({ providerId: 'oidc', callbackURL: '/arcs' });
 	}
 
 	function logout() {

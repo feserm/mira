@@ -1,11 +1,13 @@
-import type { User, Session } from 'better-auth';
+import type { Session, User } from 'better-auth';
 
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 declare global {
 	namespace App {
 		interface Locals {
-			user?: User;
+			// `role` comes from the better-auth admin plugin ('admin' | 'user'; null before the first sign-in
+			// after the column was added). Use `isAdmin` / `requireAdmin` from `$lib/server/auth-guard`.
+			user?: User & { role?: string | null };
 			session?: Session;
 		}
 

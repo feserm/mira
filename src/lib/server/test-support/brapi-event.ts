@@ -3,12 +3,15 @@
  *  established differently (bearer token, API token), change that one function, not every test. */
 import { isHttpError } from '@sveltejs/kit';
 
-export type Locals = { user?: { id: string; email: string; name: string }; session?: unknown };
+export type Locals = {
+	user?: { id: string; email: string; name: string; role?: string | null };
+	session?: unknown;
+};
 
 /** The caller of an authenticated request. */
-export function authenticatedLocals(userId = 'user-1'): Locals {
+export function authenticatedLocals(userId = 'user-1', role: 'user' | 'admin' = 'user'): Locals {
 	return {
-		user: { id: userId, email: `${userId}@example.org`, name: 'Test User' },
+		user: { id: userId, email: `${userId}@example.org`, name: 'Test User', role },
 		session: { id: `session-${userId}`, userId }
 	};
 }

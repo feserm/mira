@@ -30,8 +30,18 @@ The job stores only `requested_by` (a user id), never a token. The worker calls 
 `auth.api.getAccessToken({ body: { providerId: 'oidc', accountId, userId } })` with no headers. In the
 pinned version (1.6.29) the endpoint accepts `userId` when there is no session, reads the account row,
 refreshes the access token against the issuer when it is about to expire, and stores the new tokens.
-So refresh logic and any future token encryption (S2.3) stay in one place. The account row is picked
+So refresh logic and token encryption (S2.3) stay in one place. The account row is picked
 exactly as in the web app (most recently updated `oidc` row).
+
+The refresh runs under a per-user Postgres advisory lock (`src/lib/server/token-refresh-lock.ts`) shared with the web
+app, because GitLab refresh tokens are single use: two refreshes of the same user's token at once would make the loser
+fail with `invalid_grant`. Inside the lock better-auth re-reads the account row, so the second caller uses the token the
+first just stored and makes no request. The lock is `pg_advisory_xact_lock` in a transaction (safe behind PgBouncer in
+transaction mode, released by Postgres if the process dies), it is skipped while the stored token is valid for another
+30 s or more, a waiter gives up after 30 s with a transient error (the job is retried, it is not a "sign in again"
+failure), and at most half of `DB_POOL_MAX` locks are held or awaited per process so waiting cannot starve the pool
+(each held lock uses one connection and the refresh itself a second one). The refresh call is also bounded by
+`HTTP_TIMEOUT`.
 
 The worker cannot import `auth.ts` (it uses `$app/server` and the SvelteKit cookie plugin), so it
 builds a second better-auth instance from the same shared options, without the cookie plugin.
@@ -42,6 +52,9 @@ the job **fails without retry** with: "PLANTdataHUB access could not be refreshe
 Sign in again and retry." Nothing is written: Extract is the only step that needs the token, and it
 writes only after a successful download. The token is fetched immediately before Extract. A
 `transform`/`load` job needs no token.
+
+The same message is what a user sees after S2.3 (stored tokens cleared by the migration) or a
+`BETTER_AUTH_SECRET` rotation until they sign in again: there is no usable refresh token, or it cannot be decrypted.
 
 Rejected: a short-lived token stored on the job. It puts a credential in a second table and still
 expires before a queued or retried job runs.

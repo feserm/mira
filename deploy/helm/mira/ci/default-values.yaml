@@ -5,6 +5,7 @@ image:
 ingress:
   host: mira.example.org
 config:
+  adminEmails: admin@example.org, Ops@example.org
   oidc:
     issuerUrl: https://git.example.org
     clientId: example-client-id
