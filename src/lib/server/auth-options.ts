@@ -30,6 +30,10 @@ export async function syncRole(userId: string): Promise<void> {
 export const baseAuthOptions = {
 	baseURL: config.origin,
 	database: drizzleAdapter(db, { provider: 'pg' }),
+	// Tokens in `account` are stored encrypted with a key derived from BETTER_AUTH_SECRET (S2.3).
+	// Rotating the secret makes them unreadable: docs/secret-rotation.md. (better-auth leaves the
+	// `id_token` column in plaintext; it is not a GitLab API credential.)
+	account: { encryptOAuthTokens: true },
 	databaseHooks: {
 		session: {
 			create: {

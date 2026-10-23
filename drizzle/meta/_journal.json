@@ -36,6 +36,13 @@
       "when": 1792762459903,
       "tag": "0004_identity_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792762839465,
+      "tag": "0005_null_stored_oauth_tokens",
+      "breakpoints": true
     }
   ]
 }

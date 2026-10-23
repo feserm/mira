@@ -76,22 +76,26 @@ job tokens and deploy tokens as ways to authenticate, and an OAuth token is not 
 with only `read_api` can download the RO-Crate package is **not established**. Find out on staging, with the user who will
 import.
 
-- [ ] **Log in once** (section 4) so a token exists. Then take it out of the database without printing it:
+- [ ] **Make a test credential.** Since S2.3 the tokens in `account` are encrypted with a key derived from
+      `BETTER_AUTH_SECRET`, so they can no longer be copied out of the database. Use a **personal access token** of the
+      same test user instead (GitLab: profile, Access, Personal access tokens, scope `read_api` only, a short expiry such as
+      tomorrow), without printing it:
 
   ```sh
-  PRIMARY=$(kubectl -n mira get cluster mira-pg -o jsonpath='{.status.currentPrimary}')
-  read -rs TOKEN < <(kubectl -n mira exec "$PRIMARY" -c postgres -- psql -d mira -At -c \
-    "select a.access_token from account a join \"user\" u on u.id = a.user_id
-      where u.email = 'you@example.org' and a.provider_id = 'oidc' order by a.updated_at desc limit 1")
+  read -rs TOKEN   # paste the token, press Enter
   GL=https://git.example.org
   ```
 
-  The token is a live credential for about two hours: do not paste it anywhere, do not put it in a shell history file
-  (`read -s` keeps it out of the terminal), and `unset TOKEN` when done. (It is stored in plaintext until S2.3.)
+  It is a live credential: do not paste it anywhere else, and `unset TOKEN` and **revoke it in GitLab** when done.
+  Why a PAT, and not a script that decrypts the stored OAuth token: it needs no code in the image, no secret outside the
+  cluster and nothing that prints a user's stored token. The cost is that a PAT is not the OAuth token MIRA uses, so this
+  section answers "is `read_api` enough for these routes at all?" and **the import in section 5 is the definitive test
+  for the OAuth token** (see the last row of the table below).
 
-- [ ] **Which scopes does it carry?** `curl -s -H "Authorization: Bearer $TOKEN" "$GL/oauth/token/info"`.
-      Expected: JSON with `"scope":["openid","profile","email","read_api"]` and your application id under `application`.
-      If `read_api` is missing, the application's scopes were changed after the login: sign out and in again.
+- [ ] **Which scopes does it carry?** `curl -s -H "Authorization: Bearer $TOKEN" "$GL/api/v4/personal_access_tokens/self" | head -c 400`.
+      Expected: JSON with `"scopes":["read_api"]` and `"active":true`.
+      (What the **OAuth** token carries is in the database: `select scope from account ...` in section 4. A `scope` without
+      `read_api` means the application's scopes were changed after the login: sign out and in again.)
 - [ ] **List projects.** `curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" "$GL/api/v4/projects?archived=false&simple=true&per_page=1"`.
       Expected: `200`.
 - [ ] **Read one ARC** (use a project id you can see): `curl -s -w '\n%{http_code}\n' -H "Authorization: Bearer $TOKEN" "$GL/api/v4/projects/<ID>?statistics=true&license=true" | tail -c 200`.
@@ -100,13 +104,14 @@ import.
       Expected: `200`. This is the call in doubt.
 - [ ] `unset TOKEN`.
 
-Record the result in the table at the end of this page. If the last call is **not** `200`:
+Record the result in the table at the end of this page. If the last call is **not** `200` (the PAT answers; "OAuth token" below means what the import in section 5 shows):
 
-| Observed                          | Meaning                                                           | What to do                                                                                                                                                                                                                                                                                                      |
-| --------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `404`                             | The ARC has no package at that name/version (not a scope problem) | Pick an ARC that has been published with the ISA RO-Crate package, or check the package name in the project's Packages page.                                                                                                                                                                                    |
-| `401` or `403`                    | `read_api` does not cover the package download for OAuth tokens   | Change the application's scope to `api` and `config.oidc.scopes` to `openid profile email api`, then **every user must sign in again** (old tokens keep their old scopes). `api` is write access to everything the user can write: it makes the confidential client and S2.3 (token encryption) more important. |
-| `401` or `403` with `api` as well | GitLab does not accept OAuth tokens for the package registry      | The design needs a change (a different credential for Extract), which also breaks the "only users with GitLab access" rule (S2.4b). Stop and decide; do not work around it with one shared service token without that decision.                                                                                 |
+| Observed                                                                                                                        | Meaning                                                              | What to do                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `404`                                                                                                                           | The ARC has no package at that name/version (not a scope problem)    | Pick an ARC that has been published with the ISA RO-Crate package, or check the package name in the project's Packages page.                                                                                                                                                                                    |
+| `401` or `403`                                                                                                                  | `read_api` does not cover the package download for OAuth tokens      | Change the application's scope to `api` and `config.oidc.scopes` to `openid profile email api`, then **every user must sign in again** (old tokens keep their old scopes). `api` is write access to everything the user can write: it makes the confidential client and S2.3 (token encryption) more important. |
+| `200` here, but the import in section 5 fails with "denied access" / "rejected the access token" for a user who can see the ARC | GitLab accepts a PAT but not an OAuth token for the package registry | Same as the next row: the design needs a different credential for Extract.                                                                                                                                                                                                                                      |
+| `401` or `403` with `api` as well                                                                                               | GitLab does not accept OAuth tokens for the package registry         | The design needs a change (a different credential for Extract), which also breaks the "only users with GitLab access" rule (S2.4b). Stop and decide; do not work around it with one shared service token without that decision.                                                                                 |
 
 ## 4. Login test
 

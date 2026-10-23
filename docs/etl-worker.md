@@ -30,7 +30,7 @@ The job stores only `requested_by` (a user id), never a token. The worker calls 
 `auth.api.getAccessToken({ body: { providerId: 'oidc', accountId, userId } })` with no headers. In the
 pinned version (1.6.29) the endpoint accepts `userId` when there is no session, reads the account row,
 refreshes the access token against the issuer when it is about to expire, and stores the new tokens.
-So refresh logic and any future token encryption (S2.3) stay in one place. The account row is picked
+So refresh logic and token encryption (S2.3) stay in one place. The account row is picked
 exactly as in the web app (most recently updated `oidc` row).
 
 The worker cannot import `auth.ts` (it uses `$app/server` and the SvelteKit cookie plugin), so it

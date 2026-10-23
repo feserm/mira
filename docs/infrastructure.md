@@ -18,8 +18,8 @@ Register the GitLab application as **confidential** and set `secrets.oidcClientS
 either way (PKCE is on in both cases; `OIDC_CLIENT_SECRET` is optional).
 
 Why: the app stores the user's refresh token and the worker uses it unattended, hours after login. A
-refresh token is a long-lived credential sitting in the `account` table, in every backup, and (until
-S2.3) in plaintext. Against a public client, anyone who gets that token and the client id (public) can
+refresh token is a long-lived credential sitting in the `account` table and in every backup; since
+S2.3 it is stored encrypted (key derived from `BETTER_AUTH_SECRET`, [secret-rotation.md](secret-rotation.md)). Against a public client, anyone who gets that token and the client id (public) can
 refresh it. Against a confidential client they also need the client secret, which lives only in a
 Kubernetes Secret and never in the database or its backups. The cost is one more Secret and a rotation
 step.
