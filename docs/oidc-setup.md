@@ -140,7 +140,7 @@ If it fails, go to the troubleshooting table below.
 request shaped like a refresh grant. Run this on staging with a test user who can import an ARC. `PG` below is
 `kubectl -n mira exec "$PRIMARY" -c postgres -- psql -d mira -At -c`.
 
-1. [ ] **Baseline.** Log in. Record a fingerprint of the refresh token (never print the token):
+1. [ ] **Baseline.** Log in. Record a fingerprint of the stored refresh token (it is encrypted since S2.3; never print it):
        `$PG "select md5(refresh_token), access_token_expires_at from account where provider_id='oidc' order by updated_at desc limit 1"`.
        Write down the `md5` (A) and the expiry.
 2. [ ] **Expire the access token.** `$PG "update account set access_token_expires_at = now() - interval '1 minute' where provider_id='oidc' and user_id = (select id from \"user\" where email='test@example.org')"`.
@@ -150,9 +150,18 @@ request shaped like a refresh grant. Run this on staging with a test user who ca
        Expected in the worker log: no `etl: token refresh failed`, and `succeeded`. Expected at GitLab: one `POST /oauth/token` answered
        `200` from the MIRA host.
 4. [ ] **The row changed.** Repeat the query of step 1. Expected: a **different** `md5` (B, GitLab rotated the refresh token) and an expiry about 2 hours ahead.
-5. [ ] **Rotation race.** Expire the token again (step 2), then, within a second, import from the UI **and** reload `ORIGIN/arcs` in another tab (both refresh).
-       Expected: both succeed. If one fails with a sign-in error, GitLab's single-use refresh token lost a race
-       (documented in [infrastructure.md](infrastructure.md)): record it, it decides whether refresh needs a lock.
+5. [ ] **Rotation race.** GitLab refresh tokens are single use. Since the refresh lock, MIRA **guarantees** (tested against a
+       stub that rejects a reused refresh token, with real Postgres) that two overlapping refreshes of one user, from any
+       mix of web requests and worker jobs, make **one** call to `POST /oauth/token`: the refresh runs under a per-user
+       Postgres advisory lock and the second caller re-reads the row and uses the token the first stored. A caller that
+       cannot get the lock within 30 s fails with a retryable error (web: 503, worker: the job is retried) instead of
+       refreshing anyway. **Not verified against a real GitLab.** Check it: expire the token again (step 2), then, within a second,
+       import from the UI **and** reload `ORIGIN/arcs` in another tab. Expected: both succeed, and at GitLab exactly one
+       `POST /oauth/token` from the MIRA host for that moment (the worker log has no `etl: token refresh failed`). If one
+       fails with a sign-in error, or GitLab shows two refresh grants, the lock is not doing its job (a second web replica or
+       a PgBouncer in the way are the first suspects): record it.
+       Also expected, and not a failure: with two refreshes in flight the second request waits for the first (about the
+       duration of one refresh) instead of failing.
 6. [ ] **Refresh without `redirect_uri`.** Step 3 is also this test: better-auth does not send `redirect_uri` on refresh and GitLab's
        documentation shows it. If step 3 fails at GitLab with `invalid_grant` or `invalid_request` while the refresh token is valid, this is the cause.
 7. [ ] **Revoked refresh token fails the job with the right message.** In GitLab (as the test user): profile, Access, Applications,

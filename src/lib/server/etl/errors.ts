@@ -32,7 +32,9 @@ const TRANSIENT_CODES = new Set([
 	'40001',
 	'40P01',
 	'57P01',
-	'57P03'
+	'57P03',
+	// Postgres: lock_not_available, e.g. waiting too long for another refresh of the same token
+	'55P03'
 ]);
 
 /** Whether retrying the same job later could succeed. Network failures, our fetch timeouts, 429/5xx

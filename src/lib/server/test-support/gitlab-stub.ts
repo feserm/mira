@@ -11,6 +11,9 @@ export interface GitlabStub {
 export interface GitlabStubOptions {
 	accessToken: string;
 	refreshToken: string;
+	/** GitLab semantics: a refresh token works once. The grant answers 400 `invalid_grant` for any
+	 *  refresh token but the one issued last (initially this value), and hands out a new one each time. */
+	singleUseFrom?: string;
 	/** how long the token endpoint takes to answer, so overlapping refreshes really overlap */
 	delayMs?: number;
 }
@@ -18,6 +21,7 @@ export interface GitlabStubOptions {
 export function stubGitlab(opts: GitlabStubOptions): GitlabStub {
 	const base = 'https://gitlab.test';
 	let refreshes = 0;
+	let valid = opts.singleUseFrom;
 	const json = (body: unknown, status = 200) =>
 		new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -34,11 +38,17 @@ export function stubGitlab(opts: GitlabStubOptions): GitlabStub {
 		}
 		if (url === `${base}/oauth/token`) {
 			const body = String(init?.body ?? (input instanceof Request ? await input.text() : ''));
-			if (new URLSearchParams(body).get('grant_type') === 'refresh_token') refreshes++;
+			const form = new URLSearchParams(body);
+			if (form.get('grant_type') === 'refresh_token') refreshes++;
 			if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs));
+			let refreshToken = opts.refreshToken;
+			if (valid !== undefined) {
+				if (form.get('refresh_token') !== valid) return json({ error: 'invalid_grant' }, 400);
+				refreshToken = valid = `${opts.refreshToken}-${refreshes}`;
+			}
 			return json({
 				access_token: opts.accessToken,
-				refresh_token: opts.refreshToken,
+				refresh_token: refreshToken,
 				token_type: 'Bearer',
 				expires_in: 7200,
 				scope: 'openid profile email read_api'
