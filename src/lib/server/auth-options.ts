@@ -10,7 +10,9 @@ import { db } from '$lib/server/db';
 export const baseAuthOptions = {
 	baseURL: config.origin,
 	database: drizzleAdapter(db, { provider: 'pg' }),
-	emailAndPassword: { enabled: true }
+	// Login is OIDC only (S2.1): with this off, sign-up and email sign-in answer 400, so the only way
+	// a `user` row comes into being is the PLANTdataHUB login.
+	emailAndPassword: { enabled: false }
 };
 
 export const oidcPlugin = () =>
