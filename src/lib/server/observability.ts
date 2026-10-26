@@ -1,7 +1,7 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import { randomUUID } from 'node:crypto';
 import { enqueueRequestLog } from '$lib/server/db/request-logs';
-import { logger } from '$lib/server/log';
+import { errorMessage, logger } from '$lib/server/log';
 import { httpDuration, httpRequests } from '$lib/server/metrics';
 
 /** What a request is called when SvelteKit matched no route (`event.route.id` is null). One fixed
@@ -83,4 +83,26 @@ export function observeRequest(event: Event): RequestObservation {
 			}
 		}
 	};
+}
+
+/** SvelteKit's `handleError`: an error nobody handled (a thrown exception in a load function or an
+ *  endpoint). Logs the **message** and where, as one JSON line, instead of the framework default that
+ *  prints the error object (stack, and whatever the error carries). A 404 is not an error here: the
+ *  request line already says it. Returns the framework's own safe message to the client. */
+export function logServerError(input: {
+	error: unknown;
+	event: Pick<RequestEvent, 'locals' | 'route' | 'request'>;
+	status: number;
+	message: string;
+}): App.Error {
+	const { error, event, status, message } = input;
+	if (status !== 404) {
+		logger.error(`Unhandled error: ${errorMessage(error)}`, {
+			requestId: event.locals.requestId,
+			method: event.request.method,
+			route: event.route.id ?? UNMATCHED_ROUTE,
+			status
+		});
+	}
+	return { message };
 }

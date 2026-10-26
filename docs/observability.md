@@ -47,6 +47,8 @@ a grep that worked before still works.
 
 **What is never logged:** `Authorization` headers, cookies, API tokens, GitLab tokens, OIDC codes, request bodies, and query strings (BrAPI filters live there). The logger writes only strings, numbers and booleans, so an `Error` or a header map passed by mistake is dropped, and strings are scrubbed of anything shaped like a MIRA API token or a `Bearer` credential. Error logging keeps the rule "the message, never the object". A test sends a bearer token, a cookie and a query string through the hook and checks that none appears in the log or in `/metrics`.
 
+**Unhandled errors** (a thrown exception in a page or endpoint) go through SvelteKit's `handleError`, which logs `Unhandled error: <message>` with `requestId`, `route` and `status`, never the error object or its stack. The only other non-JSON output is adapter-node's single `Listening on http://...` line at start.
+
 **Log shipping** (Loki, Elastic, ...) is the cluster's job; the lines need no parsing rules beyond JSON.
 
 ## Metrics

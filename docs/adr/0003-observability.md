@@ -50,7 +50,7 @@ Giving the worker a port would add a Service, a second ServiceMonitor target and
 ## Consequences
 
 - Operators get one JSON line per request with an id they can quote, and a per-pod scrape with a bounded series count.
-- `hooks.server.ts` changes are: `'/metrics'` joined the probe set, and the BrAPI-only timing block became one `observeRequest(event)` call with `stamp` and `finish`. Session K can add its header code around `observation.stamp(response)`.
+- `hooks.server.ts` changes are: `'/metrics'` joined the probe set, a `handleError` export logs the message of an unhandled error instead of the framework's dump, and the BrAPI-only timing block became one `observeRequest(event)` call with `stamp` and `finish`. Session K can add its header code around `observation.stamp(response)`.
 - Counters reset when a pod restarts, and are per pod (so is the access cache and the token limit they describe).
 - `mira_db_pool_open_connections` depends on `application_name` reaching `pg_stat_activity`; behind a pooler it may not.
 - The Postgres alert rules depend on metric names of the operator that were not checked against a running one.

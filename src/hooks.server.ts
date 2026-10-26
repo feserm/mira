@@ -1,4 +1,4 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import '$lib/server/env'; // validates configuration at server start
 import { auth } from '$lib/server/auth';
@@ -6,7 +6,7 @@ import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { flushAndStop } from '$lib/server/db/request-logs';
 import { closeDb } from '$lib/server/db';
 import { errorMessage, logger } from '$lib/server/log';
-import { observeRequest } from '$lib/server/observability';
+import { logServerError, observeRequest } from '$lib/server/observability';
 
 // Probe and scrape paths bypass session lookup, request logging and request metrics: kubelet and
 // Prometheus send no cookies and must not write a log line or a request_logs row every few seconds.
@@ -62,3 +62,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 		observation.finish(status, { brapi: BRAPI_PATH.test(event.url.pathname) });
 	}
 };
+
+// One JSON line (message only) instead of the framework's default, which prints the error object.
+export const handleError: HandleServerError = (input) => logServerError(input);

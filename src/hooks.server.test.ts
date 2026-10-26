@@ -22,7 +22,7 @@ vi.mock('better-auth/svelte-kit', () => ({
 		resolve(event)
 }));
 
-const { handle } = await import('./hooks.server');
+const { handle, handleError } = await import('./hooks.server');
 
 const lines: string[] = [];
 const logged = () => lines.map((l) => JSON.parse(l));
@@ -227,5 +227,48 @@ describe('secrets and cardinality', () => {
 		const output = await registry.render();
 		expect(output).toContain('method="OTHER"');
 		expect(output).not.toContain('PURGE');
+	});
+});
+
+describe('handleError', () => {
+	const event = (id: string | null) =>
+		({
+			locals: { requestId: 'req-9' },
+			route: { id },
+			request: new Request('http://localhost/x?token=qsecret')
+		}) as never;
+
+	it('logs the message of an unhandled error as one JSON line, never the error object', () => {
+		const error = Object.assign(new Error('boom'), {
+			token: 'glpat-secret',
+			stack: 'at secret.ts'
+		});
+		const returned = handleError({
+			error,
+			event: event('/arcs/[id]'),
+			status: 500,
+			message: 'Internal Error'
+		} as never);
+		expect(returned).toEqual({ message: 'Internal Error' });
+		expect(lines).toHaveLength(1);
+		expect(logged()[0]).toMatchObject({
+			level: 'error',
+			msg: 'Unhandled error: boom',
+			requestId: 'req-9',
+			route: '/arcs/[id]',
+			status: 500
+		});
+		expect(lines[0]).not.toMatch(/glpat-secret|secret\.ts|qsecret/);
+	});
+
+	it('says nothing about a 404 (the request line does)', () => {
+		const returned = handleError({
+			error: new Error('Not found: /nope'),
+			event: event(null),
+			status: 404,
+			message: 'Not Found'
+		} as never);
+		expect(returned).toEqual({ message: 'Not Found' });
+		expect(lines).toHaveLength(0);
 	});
 });
