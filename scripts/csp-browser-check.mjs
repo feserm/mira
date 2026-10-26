@@ -146,6 +146,8 @@ try {
 	async function visit(label, path, { expectText, afterLoad }) {
 		const page = await context.newPage();
 		const consoleErrors = [];
+		let requests = 0;
+		page.on('request', () => requests++);
 		page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
 		page.on('pageerror', (e) => consoleErrors.push(String(e)));
 		const response = await page.goto(`${APP}${path}`, { waitUntil: 'networkidle' });
@@ -155,6 +157,9 @@ try {
 		note(
 			(await response.allHeaders())['x-frame-options'] === 'DENY',
 			`${label}: X-Frame-Options: DENY`
+		);
+		console.log(
+			`info ${label}: ${requests} requests to load (what an ingress rate limit sees per page)`
 		);
 		if (afterLoad) await afterLoad(page);
 		await page.waitForLoadState('networkidle');

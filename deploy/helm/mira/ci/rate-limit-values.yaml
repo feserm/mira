@@ -1,0 +1,8 @@
+# Ingress rate limit on (S2.7): ingress-nginx annotations from the values, next to the user's own.
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  rateLimit:
+    enabled: true
+    connections: 40
+    whitelist: [192.0.2.0/24, 198.51.100.7/32]

@@ -88,7 +88,7 @@ jobs:
           for extra in "" ci/single-replica-values.yaml ci/no-ingress-values.yaml \
             ci/worker-disabled-values.yaml ci/worker-scaled-values.yaml ci/cnpg-values.yaml \
             ci/monitoring-values.yaml ci/network-policy-values.yaml ci/network-policy-cilium-values.yaml \
-            ci/network-policy-https-values.yaml; do
+            ci/network-policy-https-values.yaml ci/rate-limit-values.yaml; do
             set --
             [ -z "$extra" ] || set -- -f "$CHART/$extra"
             helm lint "$CHART" -f "$CHART/ci/default-values.yaml" "$@"
@@ -131,6 +131,20 @@ jobs:
             --set security.csp.mode=enforce --set security.hsts.maxAge=0 > cm.yaml
           grep -q 'CSP_MODE: "enforce"' cm.yaml
           grep -q 'HSTS_MAX_AGE: "0"' cm.yaml
+      - name: Ingress rate limit annotations
+        run: |
+          set -eu
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --show-only templates/ingress.yaml | grep -q 'limit-'; then
+            echo "the ingress is rate limited by default"; exit 1
+          fi
+          helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" -f "$CHART/ci/rate-limit-values.yaml" \
+            --show-only templates/ingress.yaml > ingress.yaml
+          grep -q 'nginx.ingress.kubernetes.io/limit-rps: "20"' ingress.yaml
+          grep -q 'nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"' ingress.yaml
+          grep -q 'nginx.ingress.kubernetes.io/limit-connections: "40"' ingress.yaml
+          grep -q 'nginx.ingress.kubernetes.io/limit-whitelist: 192.0.2.0/24,198.51.100.7/32' ingress.yaml
+          # the user's own annotations stay
+          grep -q 'cert-manager.io/cluster-issuer: letsencrypt' ingress.yaml
       - name: Pod Security restricted and network policies, per pod kind
         run: |
           set -eu

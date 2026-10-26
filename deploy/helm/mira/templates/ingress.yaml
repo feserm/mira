@@ -6,7 +6,20 @@ metadata:
   name: {{ include "mira.fullname" . }}
   labels:
     {{- include "mira.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- $annotations := deepCopy .Values.ingress.annotations }}
+  {{- with .Values.ingress.rateLimit }}
+  {{- if .enabled }}
+  {{- $_ := set $annotations "nginx.ingress.kubernetes.io/limit-rps" (.rps | int | toString) }}
+  {{- $_ := set $annotations "nginx.ingress.kubernetes.io/limit-burst-multiplier" (.burstMultiplier | int | toString) }}
+  {{- if gt (int .connections) 0 }}
+  {{- $_ := set $annotations "nginx.ingress.kubernetes.io/limit-connections" (.connections | int | toString) }}
+  {{- end }}
+  {{- if .whitelist }}
+  {{- $_ := set $annotations "nginx.ingress.kubernetes.io/limit-whitelist" (join "," .whitelist) }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}

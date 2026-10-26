@@ -391,6 +391,23 @@ ingress:
   # `use-forwarded-headers` is enabled in its ConfigMap, so nothing is needed here. For example:
   #   cert-manager.io/cluster-issuer: letsencrypt
   annotations: {}
+  # Per-client-address request limit at the controller (ingress-nginx annotations). Off by default: nginx
+  # counts by the address it sees, and whether that is the real client (not a load balancer or a node) is a
+  # property of the cluster, so check it on staging first (docs/rate-limits.md). When on, a client over the
+  # limit gets the controller's own answer, 503 by default (set `limit-req-status-code: "429"` in the
+  # controller's ConfigMap, a cluster-wide setting); MIRA never sees those requests.
+  #   rps 20, burst 5x: a page load is about 16 requests (a few of them /api/auth/get-session), so one
+  #   address can load about 6 pages at once and then 1 per second on average. The per-token BrAPI limit
+  #   (60/min, enforced by the app) is 1 request/second per token, so 20 busy tokens behind one address
+  #   still fit. The sign-in endpoints have their own limit in the app (docs/rate-limits.md).
+  rateLimit:
+    enabled: false
+    rps: 20
+    burstMultiplier: 5
+    # Simultaneous connections per address; 0 = no limit.
+    connections: 0
+    # Addresses (CIDR) that are never limited, e.g. a monitoring probe or a scanner of the institute.
+    whitelist: []
   tls:
     enabled: true
     # Empty = <release>-mira-tls. The Secret is created by cert-manager or by you.
