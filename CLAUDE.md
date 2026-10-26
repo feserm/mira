@@ -95,7 +95,11 @@ resolves it case-insensitively to the internal `arcId` used to scope every query
 `ro_crate_staging.path` (populated at Extract time, not looked up live against GitLab per request).
 `src/lib/server/brapi/response.ts` provides the shared response envelope (`brapiListResponse`/
 `brapiSingleResponse`), pagination parsing, and the `brapiJson` helper — every BrAPI endpoint should
-use these rather than hand-rolling the envelope. Use the `brapi` skill (`.claude/skills/brapi/`) to
+use these rather than hand-rolling the envelope. Every handler starts with `authenticateBrapi(event)` (bearer API token or session) and
+then `resolveReadableArc(event)`, which resolves `[repo]` and asks PLANTdataHUB, per request and cached for 5
+minutes per (user, ARC), whether the caller can read the ARC; a caller who cannot gets the same 404 as for an
+unknown repo (`src/lib/server/arc-access.ts`, `docs/adr/0002-arc-access-control.md`). The `/arcs/[id]` pages and
+the dashboard go through the same check. Use the `brapi` skill (`.claude/skills/brapi/`) to
 look up BrAPI endpoint/schema details offline instead of fetching the spec — it has indexed line
 numbers into the full v2.1 OpenAPI spec.
 
