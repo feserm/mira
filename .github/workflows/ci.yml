@@ -121,6 +121,16 @@ jobs:
           if grep -qE '^kind: CronJob$|MiraRetentionNotRunning' no-retention.yaml; then
             echo "retention.enabled=false still renders the CronJob or its alert"; exit 1
           fi
+      - name: Security settings reach the ConfigMap
+        run: |
+          set -eu
+          helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --show-only templates/configmap.yaml > cm.yaml
+          grep -q 'CSP_MODE: "report-only"' cm.yaml
+          grep -q 'HSTS_MAX_AGE: "15552000"' cm.yaml
+          helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --show-only templates/configmap.yaml \
+            --set security.csp.mode=enforce --set security.hsts.maxAge=0 > cm.yaml
+          grep -q 'CSP_MODE: "enforce"' cm.yaml
+          grep -q 'HSTS_MAX_AGE: "0"' cm.yaml
       - name: Pod Security restricted and network policies, per pod kind
         run: |
           set -eu
@@ -185,6 +195,10 @@ jobs:
             echo "expected a failure for retention.days=10"; exit 1
           fi
           grep -q "retention.days" err.log
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set security.csp.mode=strict 2> err.log; then
+            echo "expected a failure for an unknown CSP mode"; exit 1
+          fi
+          grep -q "security.csp.mode" err.log
           # NetworkPolicies need addresses for PLANTdataHUB in cidr mode: no guessing, no silent default.
           if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set networkPolicy.enabled=true 2> err.log; then
             echo "expected a failure for network policies without PLANTdataHUB addresses"; exit 1

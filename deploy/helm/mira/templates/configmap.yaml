@@ -15,6 +15,8 @@ data:
   {{- with .Values.config.adminEmails }}
   ADMIN_EMAILS: {{ . | quote }}
   {{- end }}
+  CSP_MODE: {{ .Values.security.csp.mode | quote }}
+  HSTS_MAX_AGE: {{ .Values.security.hsts.maxAge | int | quote }}
   SHUTDOWN_TIMEOUT: {{ .Values.config.shutdownTimeout | quote }}
   {{- with .Values.config.db.poolMax }}
   DB_POOL_MAX: {{ . | quote }}

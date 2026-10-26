@@ -301,6 +301,28 @@
 				}
 			}
 		},
+		"security": {
+			"type": "object",
+			"properties": {
+				"csp": {
+					"type": "object",
+					"properties": {
+						"mode": {
+							"enum": ["enforce", "report-only", "off"]
+						}
+					}
+				},
+				"hsts": {
+					"type": "object",
+					"properties": {
+						"maxAge": {
+							"type": "integer",
+							"minimum": 0
+						}
+					}
+				}
+			}
+		},
 		"networkPolicy": {
 			"type": "object",
 			"properties": {

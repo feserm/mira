@@ -228,6 +228,19 @@ monitoring:
       backupMaxAgeHours: 26
       connectionRatio: 0.8
 
+# --- Security headers (S2.7) ---------------------------------------------------------------------
+# Set by the app on every response (docs/security-headers.md). Nonces, the policy itself and the other
+# headers are fixed in the code; only the two choices below are settings.
+security:
+  csp:
+    # report-only: browsers report violations (mira_csp_violations_total) and block nothing. Start here on
+    # staging; switch to enforce when that counter stays at 0 through real use. off: no CSP header.
+    mode: report-only
+  hsts:
+    # Strict-Transport-Security max-age in seconds (default 180 days), sent only when the origin is https.
+    # 0 = no header. Do not raise it before TLS has been stable for a while: browsers remember it.
+    maxAge: 15552000
+
 # --- Network policies (S2.6) ---------------------------------------------------------------------
 # Off by default, on purpose: the chart cannot know three cluster facts (the namespace of the ingress
 # controller, whether the CNI enforces NetworkPolicy, and the addresses of PLANTdataHUB), and a policy
