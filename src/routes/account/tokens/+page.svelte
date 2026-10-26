@@ -30,6 +30,22 @@
 		time, and are shown only once.
 	</p>
 
+	{#if data.login === 'sign-in-again'}
+		<div class="mb-6 alert alert-warning" role="alert">
+			<div>
+				<p class="font-semibold">Sign in again to keep your tokens working</p>
+				<p>
+					Your PLANTdataHUB login can no longer be renewed. Until you sign out and sign in to MIRA
+					again, requests with your tokens fail with 403 for every ARC that is not public.
+				</p>
+			</div>
+		</div>
+	{:else if data.login === 'unknown'}
+		<div class="mb-6 alert" role="status">
+			Your PLANTdataHUB login could not be checked just now. Reload in a moment.
+		</div>
+	{/if}
+
 	{#if form && 'created' in form && form.created}
 		<div class="mb-6 alert alert-vertical alert-success sm:alert-horizontal" role="status">
 			<div class="w-full min-w-0">

@@ -8,9 +8,15 @@ import {
 } from '$lib/server/test-support/brapi-event';
 import { useTestDb } from '$lib/server/test-support/db-mock';
 import { createDmlTestDb, hasTestDb, type DmlTestDb } from '$lib/server/test-support/dml-db';
+import { stubGitlab } from '$lib/server/test-support/gitlab-stub';
+import { seedOidcLogin, seedUser } from '$lib/server/test-support/oidc-seed';
 import { actions, load } from './+page.server';
 
 vi.mock('$lib/server/db', async () => (await import('$lib/server/test-support/db-mock')).dbModule);
+vi.mock(
+	'$lib/server/env',
+	async () => (await import('$lib/server/test-support/env-mock')).envModule
+);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -184,3 +190,49 @@ describe.skipIf(!hasTestDb)('/account/tokens (real Postgres, DML-only role)', ()
 		});
 	});
 });
+
+describe.skipIf(!hasTestDb)(
+	'/account/tokens shows when the owner login cannot be used (S2.4b)',
+	() => {
+		let t: DmlTestDb;
+		beforeAll(async () => {
+			t = await createDmlTestDb();
+			useTestDb(t.db);
+		});
+		afterAll(async () => {
+			vi.unstubAllGlobals();
+			useTestDb(undefined);
+			await t?.drop();
+		});
+
+		const status = async (userId: string) => {
+			const ev = {
+				locals: authenticatedLocals(userId),
+				request: new Request('http://localhost/account/tokens')
+			} as Any;
+			return ((await load(ev)) as Any).login;
+		};
+
+		it('is ok for a working login, and costs nothing for a user without an active token', async () => {
+			await seedOidcLogin(t.db, 'works', { accessToken: 'tok' });
+			await createApiToken('works', 't', 30);
+			expect(await status('works')).toBe('ok');
+			// no token, no check: a dead login is not reported to someone who has nothing it affects
+			await seedUser(t.db, 'plain');
+			expect(await status('plain')).toBe('ok');
+		});
+
+		it('says "sign-in-again" when the owner has no linked login', async () => {
+			await seedUser(t.db, 'nologin');
+			await createApiToken('nologin', 't', 30);
+			expect(await status('nologin')).toBe('sign-in-again');
+		});
+
+		it('says "sign-in-again" when GitLab refuses to refresh the owner login', async () => {
+			await seedOidcLogin(t.db, 'dead', { accessToken: 'tok', expiresInMs: -60_000 });
+			stubGitlab({ singleUseFrom: 'not-the-stored-one' });
+			await createApiToken('dead', 't', 30);
+			expect(await status('dead')).toBe('sign-in-again');
+		});
+	}
+);
