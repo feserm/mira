@@ -116,7 +116,7 @@ describe.skipIf(!hasTestDb)('API tokens (real Postgres, DML-only role)', () => {
 		expect(r.lastUsedAt).toEqual(t0);
 
 		// a database error neither throws nor leaks
-		const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const err = vi.spyOn(console, 'log').mockImplementation(() => {});
 		const spy = vi.spyOn(t.db, 'update').mockImplementation(() => {
 			throw new Error('db down');
 		});

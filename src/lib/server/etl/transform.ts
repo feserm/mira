@@ -26,6 +26,7 @@ import type {
 } from '$lib/types/brapi/phenotyping';
 import { ARC, type OntologyAnnotation, type CompositeColumn } from '@nfdi4plants/arctrl';
 import sssomRaw from './sssom.tsv?raw';
+import { logger } from '$lib/server/log';
 
 /** A study-level contact, paired with the ARC identifier of the study it belongs to
  *  (studies aren't upserted yet at transform time, so they have no database id to link by). */
@@ -203,7 +204,7 @@ function applyMiappeCrosswalk<Source, Target>(
 		if (!accessor || !setter) {
 			if (!warnedUnresolvedIds.has(miappeId)) {
 				warnedUnresolvedIds.add(miappeId);
-				console.warn(
+				logger.warn(
 					`[transformRoCrate] sssom.tsv maps ${miappeId} (${isaId} -> ${brapiId}) but no ${
 						accessor ? 'BrAPI setter' : 'ISA accessor'
 					} is registered for it yet; skipping.`
@@ -749,7 +750,7 @@ function resolveSourceName(links: ProcessLink[], materialName: string): string {
 	}
 	if (!warnedUnresolvedSourceNames.has(materialName)) {
 		warnedUnresolvedSourceNames.add(materialName);
-		console.warn(
+		logger.warn(
 			`[transformRoCrate] could not resolve a Source for material "${materialName}" within 25 process-graph hops; using its own name.`
 		);
 	}
