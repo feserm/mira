@@ -9,3 +9,12 @@ overrides:
   brace-expansion@1: ^1.1.20
   brace-expansion@2: ^2.1.6
   devalue: ^5.9.3
+  # lodash: GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg. Held back by auth > @mrleebo/prisma-ast > chevrotain
+  # (dev only; `pnpm update --depth` did not move it). Same major. Drop once chevrotain/prisma-ast resolve lodash >=4.18.0.
+  lodash@4: ^4.18.0
+  # uuid: GHSA-w5hq-g745-h8pq (prod, via @nfdi4plants/arctrl > @nfdi4plants/exceljs, which pins ^8.3.0). Crosses a major, but
+  # exceljs only calls v4() through require('uuid'), which uuid 11 still ships as CJS. Drop once exceljs moves to uuid >=11.1.1.
+  uuid@8: ^11.1.1
+  # esbuild: GHSA-67mh-4wv8-2f99 (dev only, via drizzle-kit > @esbuild-kit/esm-loader > @esbuild-kit/core-utils, which pins ~0.18.20).
+  # drizzle-kit itself already depends on esbuild ^0.25.4. Drop once drizzle-kit stops depending on @esbuild-kit (deprecated).
+  '@esbuild-kit/core-utils>esbuild': ^0.25.4
