@@ -2,7 +2,7 @@ import { and, asc, count, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '$lib/server/db';
 import { location, study, trial } from '$lib/server/db/schema';
-import { resolveArcId } from '$lib/server/brapi/arc';
+import { resolveReadableArc } from '$lib/server/brapi/arc';
 import type { BrapiLocation } from '$lib/types/brapi/core';
 import {
 	brapiJson,
@@ -18,7 +18,7 @@ const parentLocation = alias(location, 'parent_location');
 export const GET: RequestHandler = async (event) => {
 	await authenticateBrapi(event);
 
-	const arcId = await resolveArcId(event.params.repo);
+	const arcId = await resolveReadableArc(event);
 
 	const params = event.url.searchParams;
 	const { page, pageSize } = parseBrapiPagination(params);

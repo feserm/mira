@@ -13,6 +13,7 @@ import {
 	type BrapiHandler
 } from '$lib/server/test-support/brapi-event';
 import { useTestDb } from '$lib/server/test-support/db-mock';
+import { stubGitlab } from '$lib/server/test-support/gitlab-stub';
 import {
 	createDmlTestDb,
 	hasTestDb,
@@ -28,6 +29,10 @@ import { GET as studiesGET } from './studies/+server';
 import { GET as trialsGET } from './trials/+server';
 
 vi.mock('$lib/server/db', async () => (await import('$lib/server/test-support/db-mock')).dbModule);
+vi.mock(
+	'$lib/server/env',
+	async () => (await import('$lib/server/test-support/env-mock')).envModule
+);
 
 /** [service, handler, id field in the response, query parameter that selects one by id] */
 const LIST_ENDPOINTS: [string, BrapiHandler, string, string][] = [
@@ -41,7 +46,7 @@ const LIST_ENDPOINTS: [string, BrapiHandler, string, string][] = [
 describe.skipIf(!hasTestDb)('BrAPI handlers: contract (real Postgres, DML-only role)', () => {
 	let t: DmlTestDb;
 	beforeAll(async () => {
-		vi.stubGlobal('fetch', async () => new Response('unavailable', { status: 500 }));
+		stubGitlab({ unknownProjects: 'public' }); // every ARC is public: these suites are not about access
 		t = await createDmlTestDb();
 		useTestDb(t.db);
 		await seedBrapiFixture(t); // read-only from here on: tests share it and cannot affect each other

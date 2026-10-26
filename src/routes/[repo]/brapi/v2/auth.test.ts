@@ -15,6 +15,7 @@ import {
 	type BrapiHandler
 } from '$lib/server/test-support/brapi-event';
 import { useTestDb } from '$lib/server/test-support/db-mock';
+import { stubGitlab } from '$lib/server/test-support/gitlab-stub';
 import { createDmlTestDb, hasTestDb, type DmlTestDb } from '$lib/server/test-support/dml-db';
 import { GET as germplasmGET } from './germplasm/+server';
 import { GET as mcpdGET } from './germplasm/[germplasmDbId]/mcpd/+server';
@@ -25,6 +26,10 @@ import { GET as studiesGET } from './studies/+server';
 import { GET as trialsGET } from './trials/+server';
 
 vi.mock('$lib/server/db', async () => (await import('$lib/server/test-support/db-mock')).dbModule);
+vi.mock(
+	'$lib/server/env',
+	async () => (await import('$lib/server/test-support/env-mock')).envModule
+);
 
 const ALL_HANDLERS: [string, BrapiHandler][] = [
 	['trials', trialsGET],
@@ -39,7 +44,7 @@ const ALL_HANDLERS: [string, BrapiHandler][] = [
 describe.skipIf(!hasTestDb)('BrAPI authentication (real Postgres, DML-only role)', () => {
 	let t: DmlTestDb;
 	beforeAll(async () => {
-		vi.stubGlobal('fetch', async () => new Response('unavailable', { status: 500 }));
+		stubGitlab({ unknownProjects: 'public' }); // every ARC is public: these suites are not about access
 		t = await createDmlTestDb();
 		useTestDb(t.db);
 		await seedBrapiFixture(t);

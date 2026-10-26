@@ -42,13 +42,14 @@ network.
 
 ## 2. Layers and what each proves
 
-| Layer         | Where                                     | Needs Postgres | Proves                                                                                         |
-| ------------- | ----------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------- |
-| Transform     | `etl/transform.test.ts`                   | no             | RO-Crate in, BrAPI entities out: crosswalk fields, hand-written accessors, missing/malformed   |
-| Load          | `etl/load.test.ts`                        | yes            | idempotency, update in place, shared contacts, atomicity, per-ARC serialisation                |
-| Pipeline      | `etl/pipeline.test.ts`                    | yes            | queued job -> Extract/Transform/Load with a stubbed GitLab, `ro_crate_staging` stays truthful  |
-| BrAPI handler | `src/routes/[repo]/brapi/v2/**/*.test.ts` | yes            | 401, 404, envelope, pagination, filters, sorting, arc isolation, against the real `+server.ts` |
-| DML role      | `test-support/dml-db.test.ts`             | yes            | the app role cannot run DDL; the rest of the suite runs as that role                           |
+| Layer         | Where                                                                                                                          | Needs Postgres | Proves                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Transform     | `etl/transform.test.ts`                                                                                                        | no             | RO-Crate in, BrAPI entities out: crosswalk fields, hand-written accessors, missing/malformed                                                    |
+| Load          | `etl/load.test.ts`                                                                                                             | yes            | idempotency, update in place, shared contacts, atomicity, per-ARC serialisation                                                                 |
+| Pipeline      | `etl/pipeline.test.ts`                                                                                                         | yes            | queued job -> Extract/Transform/Load with a stubbed GitLab, `ro_crate_staging` stays truthful                                                   |
+| BrAPI handler | `src/routes/[repo]/brapi/v2/**/*.test.ts`                                                                                      | yes            | 401, 404, envelope, pagination, filters, sorting, arc isolation, against the real `+server.ts`                                                  |
+| DML role      | `test-support/dml-db.test.ts`                                                                                                  | yes            | the app role cannot run DDL; the rest of the suite runs as that role                                                                            |
+| ARC access    | `arc-access.test.ts`, `brapi/v2/arc-access.test.ts`, `arcs/[id]/arc-access.test.ts`, the dashboard and `/account/tokens` cases | yes            | S2.4b: who may read an ARC, against a stubbed PLANTdataHUB (`gitlab-stub.ts`); every handler and page entry point is found from the file system |
 
 Handlers are called directly with a fake `RequestEvent`. "Who is the caller" lives in one helper
 (`test-support/brapi-event.ts`, `authenticatedLocals()`); when sessions G, H and I change how the user is
@@ -109,3 +110,13 @@ Five of the six were fixed after the first green CI run; the decisions are recor
 `src/lib/server/test-support/fixtures/phenosphere-ro-crate.json` is the IPK Phenosphere maize benchmark ARC (4380 graph nodes, 7 studies, 11 accessions, 1035 observation units). The e-mail addresses and ORCIDs of its two registered contacts are replaced by placeholders; everything else is as exported, and a test fails if a real address comes back. `etl/golden.test.ts` transforms it (about 4 s, so the tests share one run) and, against Postgres, loads it, re-imports it with unchanged counts and row ids, and prunes a removed study.
 
 Not covered by this crate: observations, observation variables, images and events (Transform emits none from it yet).
+
+## 9. ARC access (S2.4b)
+
+Every suite that reaches a BrAPI handler, an `/arcs/[id]` entry point or the dashboard loader goes through `checkArcAccess`, which asks PLANTdataHUB. Tests therefore need two things beyond the database:
+
+- `vi.mock('$lib/server/env', async () => (await import('$lib/server/test-support/env-mock')).envModule)`: the issuer is `https://gitlab.test` and the timeouts are short (1 s and 2 s), so the test of a hanging GitLab is quick.
+- `stubGitlab()` (`test-support/gitlab-stub.ts`), which stands in for the OIDC endpoints and for `GET /api/v4/projects/:id`. Suites that are not about access use `stubGitlab({ unknownProjects: 'public' })`: every ARC is public and nobody needs a login. Suites about access register projects with `setProject(id, { visibility, members })` (members are access tokens), accept tokens with `acceptToken`, and break GitLab with `failProjects(status | 'network' | 'hang')`; `projectCalls()` records who asked (token or anonymous). `seedOidcLogin` (`test-support/oidc-seed.ts`) stores a user's encrypted login the way a real sign-in does.
+- The answers are cached in process: call `resetArcAccessCache()` in `beforeEach`, and use `vi.useFakeTimers({ toFake: ['Date'] })` to move past the TTL.
+
+The stub encodes what the access check relies on (anonymous callers see only public projects, an unknown token is a 401, internal projects need any known token, private ones a member). It is **not** evidence that real PLANTdataHUB behaves so: see the S2.4b list in the sprint plan.

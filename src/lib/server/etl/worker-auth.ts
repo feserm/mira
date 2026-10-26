@@ -7,12 +7,16 @@ import { RefreshLockTimeoutError, withRefreshLock } from '$lib/server/token-refr
 
 // The web app's `auth` needs a request (cookie plugin, `$app/server`). The worker has none, so it
 // has its own instance with the same options and no cookie plugin; it is only used to read and
-// refresh a user's stored OIDC token.
-const workerAuth = betterAuth({
-	...baseAuthOptions,
-	secret: config.authSecret,
-	plugins: sharedPlugins()
-});
+// refresh a user's stored OIDC token. Created on first use, not at import: the web app imports this
+// module too (the ARC access check refreshes a token owner's login through it), and `vite build`
+// imports server modules with no environment, where better-auth refuses to start without a secret.
+let workerAuth: ReturnType<typeof createWorkerAuth> | undefined;
+const createWorkerAuth = () =>
+	betterAuth({
+		...baseAuthOptions,
+		secret: config.authSecret,
+		plugins: sharedPlugins()
+	});
 
 export const SIGN_IN_AGAIN =
 	'PLANTdataHUB access could not be refreshed for the user who started this import (their sign-in may have expired or been revoked, or PLANTdataHUB was unreachable). Sign in again and retry.';
@@ -28,7 +32,9 @@ export async function getWorkerAccessToken(userId: string): Promise<string> {
 
 	try {
 		const tokens = await withRefreshLock(userId, accountId, () =>
-			workerAuth.api.getAccessToken({ body: { providerId: 'oidc', accountId, userId } })
+			(workerAuth ??= createWorkerAuth()).api.getAccessToken({
+				body: { providerId: 'oidc', accountId, userId }
+			})
 		);
 		if (!tokens?.accessToken) throw new TokenError(SIGN_IN_AGAIN);
 		return tokens.accessToken;

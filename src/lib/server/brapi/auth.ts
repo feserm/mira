@@ -11,7 +11,7 @@ export const TOKEN_RATE_LIMIT = { max: 60, windowMs: 60_000 };
 const tokenLimiter = createRateLimiter(TOKEN_RATE_LIMIT);
 
 /** An error in the BrAPI envelope (`metadata.status`) that also keeps SvelteKit's `message`. */
-function brapiError(status: number, message: string): never {
+export function brapiError(status: number, message: string): never {
 	error(status, {
 		message,
 		metadata: { datafiles: [], status: [{ message, messageType: 'ERROR' }] }
@@ -37,7 +37,7 @@ function bearerToken(request: Request): string | null | undefined {
  * throws 401 (with `WWW-Authenticate: Bearer`) / 429. A bearer header that is present but not a valid
  * active token is always a 401, even when a valid session cookie is sent too: the cookie is never a
  * fallback. On success `locals.user` is the caller and `locals.authMethod` says how they got in.
- * Nothing here checks GitLab access to the ARC: that is S2.4b.
+ * Nothing here checks GitLab access to the ARC: `resolveReadableArc` (`arc.ts`) does, right after.
  */
 export async function authenticateBrapi(event: Event, now = new Date()) {
 	const presented = bearerToken(event.request);

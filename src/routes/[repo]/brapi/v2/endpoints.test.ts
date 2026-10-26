@@ -6,6 +6,7 @@ import { contact, germplasm, location, study } from '$lib/server/db/schema';
 import { REPOS, seedBrapiFixture } from '$lib/server/test-support/brapi-fixture';
 import { callBrapi, type BrapiHandler } from '$lib/server/test-support/brapi-event';
 import { useTestDb } from '$lib/server/test-support/db-mock';
+import { stubGitlab } from '$lib/server/test-support/gitlab-stub';
 import {
 	createDmlTestDb,
 	hasTestDb,
@@ -20,13 +21,17 @@ import { GET as studiesGET } from './studies/+server';
 import { GET as trialsGET } from './trials/+server';
 
 vi.mock('$lib/server/db', async () => (await import('$lib/server/test-support/db-mock')).dbModule);
+vi.mock(
+	'$lib/server/env',
+	async () => (await import('$lib/server/test-support/env-mock')).envModule
+);
 
 const ROE_ORCID = '0000-0001-2345-6789';
 
 describe.skipIf(!hasTestDb)('BrAPI handlers: endpoints (real Postgres, DML-only role)', () => {
 	let t: DmlTestDb;
 	beforeAll(async () => {
-		vi.stubGlobal('fetch', async () => new Response('unavailable', { status: 500 }));
+		stubGitlab({ unknownProjects: 'public' }); // every ARC is public: these suites are not about access
 		t = await createDmlTestDb();
 		useTestDb(t.db);
 		await seedBrapiFixture(t);

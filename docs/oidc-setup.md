@@ -167,6 +167,22 @@ request shaped like a refresh grant. Run this on staging with a test user who ca
 7. [ ] **Revoked refresh token fails the job with the right message.** In GitLab (as the test user): profile, Access, Applications,
        **Authorized applications**, **Revoke** for `MIRA (staging)`. Expire the access token (step 2) so a refresh is needed, then click **Import RO-Crate**. Expected: - the job fails at once, not after retries: `$PG "select state, attempts, error from etl_job order by created_at desc limit 1"` shows `failed | 1 | PLANTdataHUB access could not be refreshed for the user who started this import (...). Sign in again and retry.` - the ARC page shows **Import failed** with that text; - the worker log has `etl: token refresh failed: <reason>` (better-auth's message only; tokens are never logged); - `ro_crate_staging` for that ARC is unchanged: `$PG "select extract_status, extracted_at from ro_crate_staging where arc_id = <ID>"`.
 8. [ ] **Recovery.** Sign out, sign in again (new consent, new refresh token), import again. Expected: success.
+9. [ ] **Per-ARC access with an API token after the owner's access token expired (S2.4b, the real test of the access check).**
+       Create an API token for the test user (`/account/tokens`). Pick a **private** ARC the user is a member of
+       (`REPO` is its project path, URL-encoded, e.g. `group%2Farc`). Expire the access token (step 2), then, from outside the browser:
+       `curl -si -H "Authorization: Bearer $TOKEN" "$ORIGIN/$REPO/brapi/v2/trials"`.
+       Expected: `200` with data; the worker/web log has no `token refresh failed`; at GitLab **one** `POST /oauth/token` (the refresh,
+       made for the token's owner) and `GET /api/v4/projects/<id>` twice (one anonymous, answered 404, then one with the owner's token, 200).
+       Repeat the curl within 5 minutes: `200`, no new `GET /api/v4/projects/<id>` from the MIRA host (the cache).
+       Then, in GitLab, remove the test user from the ARC; after 5 minutes at most the same curl answers `404` with
+       the body `Unknown ARC: "<repo>"`, **identical** to `curl .../no%2Fsuch-arc/brapi/v2/trials`. For a **public** ARC the first call is
+       one anonymous `GET` and no refresh. Record the real answers GitLab gave for an internal ARC and for a Guest (docs/adr/0002-arc-access-control.md).
+10. [ ] **Dead owner login gives 403, not data (S2.4b).** Revoke the application in GitLab (step 7), expire the access token (step 2),
+        and repeat the curl of step 9 on the private ARC. Expected: `403` with "Sign in to MIRA again"; `/account/tokens` shows
+        **Sign in again to keep your tokens working**; a **public** ARC still answers `200` (anonymous first). Sign in again: the next curl
+        (after at most 5 seconds) answers `200`.
+11. [ ] **GitLab unreachable gives 503, not data (S2.4b).** Scale the ingress or block the egress to GitLab for a minute (or point a
+        copy of the pod at a wrong `OIDC_ISSUER_URL`) and call a private ARC that is not in the cache: `503` with `Retry-After`, no data.
 
 If step 7 shows `attempts` above 1, or the job stays `queued`, the failure is being treated as transient: that is a bug, note the log lines.
 
@@ -197,3 +213,6 @@ If step 7 shows `attempts` above 1, or the job stays `queued`, the failure is be
 | Token refresh with an expired access token                  |        |      |     |
 | Revoked refresh token gives the "sign in again" job failure |        |      |     |
 | Rotation race observed                                      |        |      |     |
+| API token after access token expiry (step 9)                |        |      |     |
+| Removed member gets 404 within 5 minutes (step 9)           |        |      |     |
+| Dead owner login gives 403 (step 10)                        |        |      |     |

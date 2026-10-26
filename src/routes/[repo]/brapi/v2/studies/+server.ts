@@ -13,7 +13,7 @@ import {
 	studyObservationVariable,
 	observationUnit
 } from '$lib/server/db/schema';
-import { resolveArcId } from '$lib/server/brapi/arc';
+import { resolveReadableArc } from '$lib/server/brapi/arc';
 import type { BrapiStudy, BrapiContact } from '$lib/types/brapi/core';
 import {
 	brapiJson,
@@ -58,7 +58,7 @@ function parseActive(value: string | null): boolean | undefined {
 export const GET: RequestHandler = async (event) => {
 	await authenticateBrapi(event);
 
-	const arcId = await resolveArcId(event.params.repo);
+	const arcId = await resolveReadableArc(event);
 
 	const params = event.url.searchParams;
 	const { page, pageSize } = parseBrapiPagination(params);

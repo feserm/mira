@@ -9,6 +9,7 @@ import {
 	revokeApiToken,
 	tokenStatus
 } from '$lib/server/api-token';
+import { loginStatus } from '$lib/server/arc-access';
 import { isDbId } from '$lib/server/brapi/response';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -32,8 +33,15 @@ export const load: PageServerLoad = async (event) => {
 		...t,
 		status: tokenStatus(t, now)
 	}));
+	// A token reads what its owner reads, checked with the owner's stored PLANTdataHUB login. If that
+	// login is dead, requests for ARCs that are not public fail (403) until the owner signs in again:
+	// say so here instead of leaving scripts with unexplained errors. Computed on page load only, and
+	// only for someone who has an active token; it costs one token refresh at most.
+	const hasActiveToken = tokens.some((t) => t.status === 'active');
+	const login = hasActiveToken ? await loginStatus(event.locals.user.id) : 'ok';
 	return {
 		tokens,
+		login,
 		expiryChoices: EXPIRY_CHOICES,
 		defaultExpiryDays: DEFAULT_EXPIRY_DAYS,
 		maxActive: MAX_ACTIVE_TOKENS_PER_USER
