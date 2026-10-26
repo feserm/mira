@@ -6,6 +6,7 @@ import { config } from '$lib/server/env';
 import { getArc } from '$lib/server/plantdatahub';
 import { getAccessToken } from '$lib/server/plantdatahub-token';
 import { resolveArcId } from '$lib/server/brapi/arc';
+import { requireArcPageAccess } from '$lib/server/arc-page-access';
 import { enqueue, getLatestJob, type JobKind } from '$lib/server/etl/queue';
 import { toJobView } from '$lib/server/etl/job-view';
 import type { Actions, PageServerLoad } from './$types';
@@ -15,14 +16,12 @@ export const load: PageServerLoad = async (event) => {
 		redirect(303, '/');
 	}
 
+	const arcId = await requireArcPageAccess(event);
 	const token = await getAccessToken(event);
 	const [arc, [staging], job] = await Promise.all([
-		getArc(token, event.params.id),
-		db
-			.select()
-			.from(roCrateStaging)
-			.where(eq(roCrateStaging.arcId, Number(event.params.id))),
-		getLatestJob(db, Number(event.params.id))
+		getArc(token, String(arcId)),
+		db.select().from(roCrateStaging).where(eq(roCrateStaging.arcId, arcId)),
+		getLatestJob(db, arcId)
 	]);
 
 	// The BrAPI routes are addressed by GitLab project path rather than arcId, so only
@@ -40,9 +39,10 @@ export const load: PageServerLoad = async (event) => {
 async function queueJob(event: RequestEvent, kind: JobKind) {
 	const user = event.locals.user;
 	if (!user) error(401, 'Not signed in');
+	const arcId = await requireArcPageAccess(event);
 
 	const { created } = await enqueue(db, {
-		arcId: Number(event.params.id),
+		arcId,
 		kind,
 		requestedBy: user.id,
 		maxAttempts: config.etl.maxAttempts
@@ -70,8 +70,8 @@ export const actions: Actions = {
 	extract: (event) => queueJob(event, 'full'),
 
 	transform: async (event) => {
-		if (!event.locals.user) error(401, 'Not signed in');
-		const row = await stagingStatus(Number(event.params.id));
+		const arcId = await requireArcPageAccess(event);
+		const row = await stagingStatus(arcId);
 		if (row?.extractStatus !== 'success') {
 			return fail(400, { message: 'Extract must succeed before transforming.' });
 		}
@@ -79,8 +79,8 @@ export const actions: Actions = {
 	},
 
 	load: async (event) => {
-		if (!event.locals.user) error(401, 'Not signed in');
-		const row = await stagingStatus(Number(event.params.id));
+		const arcId = await requireArcPageAccess(event);
+		const row = await stagingStatus(arcId);
 		if (row?.transformStatus !== 'success') {
 			return fail(400, { message: 'Transform must succeed before loading.' });
 		}
