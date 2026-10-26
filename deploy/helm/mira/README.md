@@ -200,13 +200,26 @@ Details, the metric list and the alert table: [docs/observability.md](../../../d
   `node retention.js` with `secrets.database` (the DML-only role), batched. `retention.days` must be at least 30.
 - Example values: [ci/monitoring-values.yaml](ci/monitoring-values.yaml); the rule tests: [ci/rules-test.yaml](ci/rules-test.yaml).
 
+## Network policies, Pod Security and edge settings (S2.6, S2.7)
+
+Full pages: [network-policy.md](../../../docs/network-policy.md), [security-headers.md](../../../docs/security-headers.md), [rate-limits.md](../../../docs/rate-limits.md).
+
+- **`networkPolicy.enabled`** (default `false`): default deny for the release's pods, then per kind only what it needs (web: ingress from the ingress controller and Prometheus, egress to Postgres, PLANTdataHUB and DNS; worker: also NCBI; migration Job and retention CronJob: Postgres and DNS).
+  Egress to the two hosts needs addresses: `networkPolicy.egress.mode` is `cidr` (default; the chart refuses to render without `egress.plantdatahub.cidrs`), `cilium` (host names, needs Cilium) or `https` (any public HTTPS address). Check the namespace values (`ingressController.namespace`, `prometheus.namespace`, `dns.*`, `postgres.*`) before turning it on: a wrong ingress namespace makes the site unreachable. Needs a network plugin that enforces NetworkPolicy.
+- **Pod Security.** All pods meet the `restricted` profile (asserted in CI). The chart does not create the namespace, so label it:
+  `kubectl label namespace <ns> pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/warn=restricted pod-security.kubernetes.io/audit=restricted`.
+- **`security.csp.mode`** (`report-only` default, `enforce`, `off`) and **`security.hsts.maxAge`** (seconds, default 15552000, 0 = off) reach the app as `CSP_MODE` and `HSTS_MAX_AGE`.
+- **`ingress.rateLimit.*`** (default off): ingress-nginx annotations, 20 requests/s per address with a burst of 5x. Over the limit nginx answers 503 unless its ConfigMap sets `limit-req-status-code: "429"`.
+- **`config.proxy.xffDepth`** (default 1) is also how many proxies append to `X-Forwarded-For` for the sign-in rate limit: set it to the real number.
+- Example values: [ci/network-policy-values.yaml](ci/network-policy-values.yaml), [ci/network-policy-cilium-values.yaml](ci/network-policy-cilium-values.yaml), [ci/network-policy-https-values.yaml](ci/network-policy-https-values.yaml), [ci/rate-limit-values.yaml](ci/rate-limit-values.yaml). The assertions: [ci/check-rendered.mjs](ci/check-rendered.mjs).
+
 ## Values
 
 See [values.yaml](values.yaml) (every value is commented) and [values.schema.json](values.schema.json).
 
 ## Not included
 
-- NetworkPolicies and Pod Security admission labels (S2.6)
+- The namespace and its Pod Security labels (see above), and a network plugin
 - Postgres itself: manifests are in [deploy/postgres](../../postgres/README.md), not part of this chart
 - OIDC application registration: [docs/oidc-setup.md](../../../docs/oidc-setup.md)
 - Prometheus itself, Alertmanager and a log shipper (the chart renders a ServiceMonitor and a PrometheusRule behind flags, see [Monitoring](#monitoring-and-retention))
@@ -219,7 +232,7 @@ helm lint deploy/helm/mira -f deploy/helm/mira/ci/default-values.yaml
 helm template mira deploy/helm/mira -f deploy/helm/mira/ci/default-values.yaml | kubeconform -strict -summary -
 ```
 
-CI runs these for the seven value sets in [ci/](ci/) (default, single replica, no ingress, worker
-disabled, scaled worker, CloudNativePG, monitoring), checks that the monitoring objects are absent by
+CI runs these for the eleven value sets in [ci/](ci/) (default, single replica, no ingress, worker
+disabled, scaled worker, CloudNativePG, monitoring, network policies in three egress modes, ingress rate limit), checks that the monitoring objects are absent by
 default and present with the flags, runs `promtool check rules` and `promtool test rules` on the rendered alert rules,
-and checks that a bad `worker.*`, `config.db.ssl`, `retention.days` or a ServiceMonitor without a token is rejected.
+asserts the Pod Security and network policy fields of every pod kind (`ci/check-rendered.mjs`), and checks that a bad `worker.*`, `config.db.ssl`, `retention.days`, `security.csp.mode`, a ServiceMonitor without a token, or network policies without PLANTdataHUB addresses is rejected.

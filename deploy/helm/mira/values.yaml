@@ -37,9 +37,12 @@ config:
   #     With ORIGIN set (this chart always sets it) PROTOCOL_HEADER and HOST_HEADER are IGNORED,
   #     so X-Forwarded-Proto/Host do not matter for login or CSRF. They are set anyway as a
   #     harmless safety net, in case ORIGIN is ever removed.
-  #   * ADDRESS_HEADER/XFF_DEPTH only change the client IP (getClientAddress). MIRA never calls it,
-  #     so ADDRESS_HEADER is left unset: setting it makes getClientAddress throw for requests
-  #     that did not come through the proxy (e.g. kubelet probes).
+  #   * ADDRESS_HEADER/XFF_DEPTH only change the client IP (getClientAddress). ADDRESS_HEADER is left
+  #     unset: setting it makes getClientAddress throw for requests that did not come through the proxy
+  #     (e.g. kubelet probes). MIRA reads XFF_DEPTH itself instead, for the sign-in rate limit: the client
+  #     is the XFF_DEPTH-th entry of X-Forwarded-For from the right (docs/rate-limits.md). Set it to the
+  #     number of proxies that append to the header between the browser and the pod: 1 for the ingress
+  #     controller alone, 2 with a load balancer in front that also appends.
   #   * Only trust the headers when the proxy overwrites them (ingress-nginx does by default,
   #     unless `use-forwarded-headers` is enabled and an untrusted hop sits in front of it).
   origin: ''

@@ -39,7 +39,8 @@ export const authRateLimitOptions = {
 	advanced: {
 		ipAddress: {
 			// The hook writes the address it worked out into this header (client-address.ts). Not
-			// X-Forwarded-For: better-auth would read the left end, which a client controls.
+			// X-Forwarded-For: better-auth uses that only when it has a single entry, and finds no client at all
+			// when a second proxy appended to it.
 			ipAddressHeaders: [CLIENT_ADDRESS_HEADER]
 		}
 	}

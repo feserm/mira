@@ -4,8 +4,10 @@
  *  as one client. `X-Forwarded-For` has the real address, but only its **right** end can be trusted:
  *  each proxy appends the address it saw, and the client can put anything it likes at the left. With
  *  `XFF_DEPTH` trusted proxies in front of the app the client is the entry that many places from the
- *  right (adapter-node reads the same variable the same way). better-auth's own reading takes the
- *  left-most entry, or none at all when there are several, so it is given the answer in a header of our
+ *  right (adapter-node reads the same variable the same way). better-auth's own reading (1.6.29) uses
+ *  the header only when it has exactly one entry and finds no address when there are several, which then
+ *  puts every client into one shared bucket; it can walk a chain too, but only given the proxies' own
+ *  addresses. It is given the answer in a header of our
  *  own instead of the raw header. */
 import { isIP } from 'node:net';
 
