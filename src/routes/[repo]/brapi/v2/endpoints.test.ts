@@ -334,6 +334,13 @@ describe.skipIf(!hasTestDb)('BrAPI handlers: endpoints (real Postgres, DML-only 
 			);
 		});
 
+		it('advertises the authentication method in the standard descriptive fields', async () => {
+			const { body } = await get(serverinfoGET);
+			expect(body.result.serverDescription).toContain('Authorization: Bearer');
+			expect(body.result.serverDescription).toContain('/account/tokens');
+			expect(body.result.documentationURL).toBe('http://localhost/account/tokens');
+		});
+
 		it('filters calls by contentType, and rejects an unknown one with 400', async () => {
 			const json = await get(serverinfoGET, { contentType: 'application/json' });
 			expect(json.body.result.calls.length).toBeGreaterThan(0);
