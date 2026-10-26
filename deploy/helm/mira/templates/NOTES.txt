@@ -32,3 +32,24 @@ Public origin:  {{ include "mira.origin" . }}
 
    A pod in CrashLoopBackOff with "Invalid server configuration" in its log means a required
    setting or Secret value is missing or malformed.
+
+4. Pod Security. Every pod of this chart meets the `restricted` profile (checked in CI on the rendered
+   manifests). The chart does not create the namespace; label it so the cluster enforces that:
+
+     kubectl label namespace {{ .Release.Namespace }} \
+       pod-security.kubernetes.io/enforce=restricted \
+       pod-security.kubernetes.io/warn=restricted \
+       pod-security.kubernetes.io/audit=restricted
+
+   Pods of other charts in that namespace (CloudNativePG's included) must meet it too; whether they do is not checked here.
+   If they do not, give the database its own namespace.
+{{- if .Values.networkPolicy.enabled }}
+
+5. NetworkPolicies are ON ({{ .Values.networkPolicy.egress.mode }} egress). They only act if the cluster's network plugin enforces them.
+   Ingress to the web pods is allowed from namespace {{ .Values.networkPolicy.ingressController.namespace }}
+   {{- if .Values.secrets.metricsToken.name }} and {{ .Values.networkPolicy.prometheus.namespace }} (the metrics scrape){{ end }}; if your ingress
+   controller runs elsewhere the site is unreachable: fix networkPolicy.ingressController.namespace.
+{{- if and (eq .Values.networkPolicy.egress.mode "cidr") .Values.networkPolicy.egress.ncbi.enabled (not .Values.networkPolicy.egress.ncbi.cidrs) }}
+   NCBI has no addresses (networkPolicy.egress.ncbi.cidrs): the worker cannot look up crop names, they stay empty.
+{{- end }}
+{{- end }}
