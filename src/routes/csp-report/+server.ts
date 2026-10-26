@@ -34,7 +34,11 @@ const DIRECTIVES = new Set([
 	'navigate-to'
 ]);
 
-function oneOf<T extends string>(value: unknown, allowed: ReadonlySet<string>, otherwise: T): string {
+function oneOf<T extends string>(
+	value: unknown,
+	allowed: ReadonlySet<string>,
+	otherwise: T
+): string {
 	return typeof value === 'string' && allowed.has(value) ? value : otherwise;
 }
 
