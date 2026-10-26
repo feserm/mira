@@ -136,3 +136,15 @@ secretKeyRef:
         path: {{ .Values.config.db.caSecret.key | quote }}
 {{- end -}}
 {{- end }}
+
+{{/* Labels of the retention CronJob and its pods. */}}
+{{- define "mira.retentionLabels" -}}
+{{ include "mira.baseLabels" . }}
+app.kubernetes.io/component: retention
+{{- end }}
+
+{{- define "mira.retentionSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "mira.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: retention
+{{- end }}

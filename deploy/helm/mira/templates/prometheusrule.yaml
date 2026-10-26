@@ -1,0 +1,258 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+{{- $fn := include "mira.fullname" . }}
+{{- $ns := .Release.Namespace }}
+{{- $r := .Values.monitoring.prometheusRule }}
+{{- $pg := $r.postgres }}
+{{- /* MIRA's own metrics come from the ServiceMonitor: `job` is the Service name, `namespace` the release's. */}}
+{{- $m := printf `job="%s",namespace="%s"` $fn $ns }}
+{{- /* Database metrics come from CloudNativePG's own scrape, usually a different namespace and labels. */}}
+{{- $pgNs := default $ns $pg.namespace }}
+{{- $d := default (printf `namespace="%s",pod=~"%s-[0-9]+"` $pgNs $pg.clusterName) $pg.selector }}
+# Alert rules for MIRA (docs/observability.md section 4). Needs the Prometheus operator CRDs. The
+# `kube_*` series come from kube-state-metrics; the `cnpg_*` and `barman_cloud_*` series come from
+# CloudNativePG and its Barman Cloud plugin, not from MIRA, and their names are the ones in
+# docs/postgres-runbook.md section 1: not checked against a running operator.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "mira.fullname" . }}
+  labels:
+    {{- include "mira.labels" . | nindent 4 }}
+    {{- with $r.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: mira.availability
+      rules:
+        - alert: MiraNoReadyReplicas
+          expr: kube_deployment_status_replicas_available{namespace="{{ $ns }}",deployment="{{ $fn }}"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: >-
+              No MIRA web pod is ready
+            description: >-
+              The readiness probe (/readyz: the database answers) fails on every web pod, or none is scheduled.
+            runbook: docs/observability.md#alerts
+        - alert: MiraNotScraped
+          expr: absent(up{ {{- $m -}} } == 1)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: >-
+              No MIRA web pod is being scraped
+            description: >-
+              Either no pod is ready (it is then not an endpoint of the Service) or /metrics refuses the scrape (the METRICS_TOKEN Secret does not match). Metrics-based alerts are blind meanwhile.
+            runbook: docs/observability.md#alerts
+        - alert: MiraPodsNotReady
+          expr: kube_deployment_status_replicas_unavailable{namespace="{{ $ns }}",deployment="{{ $fn }}"} > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              A MIRA web pod has been unavailable for 15 minutes
+            description: >-
+              Fewer web pods are ready than desired. The remaining pods serve, with less headroom.
+            runbook: docs/observability.md#alerts
+        {{- if and .Values.worker.enabled (gt (int .Values.worker.replicas) 0) }}
+        - alert: MiraWorkerNotRunning
+          expr: kube_deployment_status_replicas_available{namespace="{{ $ns }}",deployment="{{ $fn }}-worker"} == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              No ETL worker is running
+            description: >-
+              Queued imports are not processed until a worker runs. The worker serves no probe: it exits when the database stays unreachable and is restarted.
+            runbook: docs/observability.md#alerts
+        {{- end }}
+    - name: mira.requests
+      rules:
+        - alert: MiraHigh5xxRate
+          expr: |-
+            sum(rate(mira_http_requests_total{ {{- $m -}} ,status_class="5xx"}[5m]))
+              / sum(rate(mira_http_requests_total{ {{- $m -}} }[5m])) > {{ $r.errorRatio }}
+            and sum(rate(mira_http_requests_total{ {{- $m -}} }[5m])) > 0.02
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              More than {{ mulf $r.errorRatio 100 }}% of MIRA requests fail with 5xx
+            description: >-
+              Over 5 minutes, across all web pods. Probes and /metrics are not counted. Look at the log lines with level error and their requestId.
+            runbook: docs/observability.md#alerts
+        - alert: MiraSlowRequests
+          expr: histogram_quantile(0.95, sum by (le) (rate(mira_http_request_duration_seconds_bucket{ {{- $m -}} }[10m]))) > {{ $r.slowRequestSeconds }}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              The 95th percentile of MIRA request durations is above {{ $r.slowRequestSeconds }} s
+            description: >-
+              Across all routes. First suspects are PLANTdataHUB latency (the per-request access check) and a saturated database pool.
+            runbook: docs/observability.md#alerts
+        - alert: MiraArcAccessUnavailable
+          expr: |-
+            sum(rate(mira_arc_access_total{ {{- $m -}} ,outcome="unavailable"}[5m]))
+              / sum(rate(mira_arc_access_total{ {{- $m -}} }[5m])) > 0.2
+            and sum(rate(mira_arc_access_total{ {{- $m -}} }[5m])) > 0.02
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              PLANTdataHUB cannot be asked whether callers may read an ARC
+            description: >-
+              More than 20% of access checks end as unavailable (fail closed, so those requests get 503). Check PLANTdataHUB, and the refresh lock if it stays.
+            runbook: docs/observability.md#alerts
+        - alert: MiraRequestLogsLost
+          expr: increase(mira_request_logs_flush_failures_total{ {{- $m -}} }[10m]) > 0 or increase(mira_request_logs_dropped_total{ {{- $m -}} }[10m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              request_logs rows cannot be written
+            description: >-
+              The queue that feeds the dashboard's request statistics fails to flush or drops rows. Requests are not affected.
+            runbook: docs/observability.md#alerts
+        - alert: MiraMetricsSeriesDropped
+          expr: increase(mira_metrics_dropped_series_total{ {{- $m -}} }[1h]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              A MIRA metric hit its series limit
+            description: >-
+              A label took too many values, which is a bug (labels must be route patterns and fixed names). The limit protected Prometheus; find the metric by its series count.
+            runbook: docs/observability.md#alerts
+    - name: mira.database
+      rules:
+        - alert: MiraDbPoolNearLimit
+          expr: mira_db_pool_open_connections{ {{- $m -}} } / mira_db_pool_max_connections{ {{- $m -}} } > 0.9
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              A MIRA web pod uses more than 90% of its connection pool
+            description: >-
+              Requests wait for a connection when the pool is full. Raise config.db.poolMax (mind max_connections) or find the slow queries.
+            runbook: docs/observability.md#alerts
+        - alert: MiraDbSlow
+          expr: max(mira_db_ping_seconds{ {{- $m -}} }) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "select 1 takes more than a second from MIRA"
+            description: >-
+              The time includes waiting for a pooled connection, so a saturated pool and a slow database both show here.
+            runbook: docs/observability.md#alerts
+    - name: mira.imports
+      rules:
+        - alert: MiraImportFailed
+          expr: max(increase(mira_etl_jobs_finished_total{ {{- $m -}} ,state="failed"}[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              An import job failed
+            description: >-
+              Every web pod reports the same count from the etl_job table, hence max. The ARC page shows the error; the worker log line has event etl.job and outcome failed.
+            runbook: docs/observability.md#alerts
+        - alert: MiraImportQueueStuck
+          expr: max(mira_etl_oldest_queued_age_seconds{ {{- $m -}} }) > {{ $r.importQueueAgeSeconds }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              An import has waited more than {{ div $r.importQueueAgeSeconds 60 }} minutes without starting
+            description: >-
+              No worker is claiming jobs, or all of them are busy. Check that the worker pod runs and its log.
+            runbook: docs/observability.md#alerts
+    {{- if .Values.retention.enabled }}
+    - name: mira.retention
+      rules:
+        - alert: MiraRetentionNotRunning
+          expr: time() - kube_cronjob_status_last_successful_time{namespace="{{ $ns }}",cronjob="{{ $fn }}-retention"} > 129600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              The request_logs retention job has not succeeded for 36 hours
+            description: >-
+              The table grows without bound until it runs. kubectl -n {{ $ns }} get jobs, and the log of the newest {{ $fn }}-retention job.
+            runbook: docs/observability.md#alerts
+    {{- end }}
+    {{- if $pg.enabled }}
+    - name: mira.postgres
+      rules:
+        - alert: MiraPostgresBackupFailed
+          expr: barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{ {{- $d -}} } > barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{ {{- $d -}} }
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: >-
+              The last Postgres backup failed
+            description: >-
+              The newest failed backup is more recent than the newest good one (docs/postgres-runbook.md section 1; the second signal there, LastBackupSucceeded, is this same fact). Unverified metric name.
+            runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on
+        - alert: MiraPostgresBackupTooOld
+          expr: time() - barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{ {{- $d -}} } > {{ mul (int $pg.backupMaxAgeHours) 3600 }}
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: >-
+              No good Postgres backup for {{ $pg.backupMaxAgeHours }} hours
+            description: >-
+              The daily backup runs at 02:00, so a gap of {{ $pg.backupMaxAgeHours }} hours means one was missed. Unverified metric name.
+            runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on
+        - alert: MiraPostgresBackupMetricMissing
+          expr: absent(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{ {{- $d -}} })
+          for: 3h
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              The Postgres backup metric does not exist
+            description: >-
+              Either the cluster has no backup yet, or the metric name or the label matcher (monitoring.prometheusRule.postgres.selector) is wrong. Without it the two backup alerts cannot fire.
+            runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on
+        - alert: MiraPostgresArchivingFailing
+          expr: cnpg_pg_stat_archiver_last_failed_time{ {{- $d -}} } > cnpg_pg_stat_archiver_last_archived_time{ {{- $d -}} }
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: >-
+              Postgres is failing to archive WAL
+            description: >-
+              The last failure is newer than the last success. WAL piles up on the volume until it archives again (the ContinuousArchiving condition is this fact). Unverified metric name.
+            runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on
+        - alert: MiraPostgresConnectionsHigh
+          expr: |-
+            sum by (namespace, pod) (cnpg_backends_total{ {{- $d -}} })
+              / max by (namespace, pod) (cnpg_pg_settings_setting{ {{- $d -}} ,name="max_connections"}) > {{ $pg.connectionRatio }}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              Postgres uses more than {{ mulf $pg.connectionRatio 100 }}% of max_connections
+            description: >-
+              Replicas x config.db.poolMax plus the worker, the migration Job and the retention job must stay under max_connections (docs/infrastructure.md). Unverified metric name.
+            runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on
+    {{- end }}
+{{- end }}

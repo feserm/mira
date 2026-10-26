@@ -62,6 +62,11 @@ spec:
               valueFrom:
                 {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.oidcClientSecret "path" "secrets.oidcClientSecret") | nindent 16 }}
             {{- end }}
+            {{- if .Values.secrets.metricsToken.name }}
+            - name: METRICS_TOKEN
+              valueFrom:
+                {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.metricsToken "path" "secrets.metricsToken") | nindent 16 }}
+            {{- end }}
             {{- include "mira.dbCaEnv" . | nindent 12 }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

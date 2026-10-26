@@ -1,0 +1,145 @@
+# promtool unit tests for the rules rendered with ci/default-values.yaml + ci/monitoring-values.yaml
+# (release `ci` in namespace `default`, Postgres in namespace `mira`). CI renders them to rules.yaml and
+# runs `promtool test rules` (see .github/workflows/ci.yml). They prove the expressions parse and fire
+# on the situations they are written for; they cannot prove the metric names of CloudNativePG exist.
+rule_files:
+  - rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: 5xx ratio above the limit fires, a healthy ratio does not
+    interval: 1m
+    input_series:
+      - series: 'mira_http_requests_total{job="ci-mira",namespace="default",method="GET",route="/[repo]/brapi/v2/trials",status_class="2xx"}'
+        values: '0+60x30'
+      - series: 'mira_http_requests_total{job="ci-mira",namespace="default",method="GET",route="/[repo]/brapi/v2/trials",status_class="5xx"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MiraHigh5xxRate
+        exp_alerts: [] # not yet 10 minutes
+      - eval_time: 20m
+        alertname: MiraHigh5xxRate
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: More than 5% of MIRA requests fail with 5xx
+              description: Over 5 minutes, across all web pods. Probes and /metrics are not counted. Look at the log lines with level error and their requestId.
+              runbook: docs/observability.md#alerts
+  - name: a few 5xx among many requests is fine
+    interval: 1m
+    input_series:
+      - series: 'mira_http_requests_total{job="ci-mira",namespace="default",method="GET",route="/x",status_class="2xx"}'
+        values: '0+600x30'
+      - series: 'mira_http_requests_total{job="ci-mira",namespace="default",method="GET",route="/x",status_class="5xx"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: MiraHigh5xxRate
+        exp_alerts: []
+  - name: a failed import fires on the pods' shared count, once
+    interval: 1m
+    input_series:
+      - series: 'mira_etl_jobs_finished_total{job="ci-mira",namespace="default",pod="web-a",state="failed"}'
+        values: '3 3 3 4 4 4 4'
+      - series: 'mira_etl_jobs_finished_total{job="ci-mira",namespace="default",pod="web-b",state="failed"}'
+        values: '3 3 3 4 4 4 4'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MiraImportFailed
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: MiraImportFailed
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: An import job failed
+              description: Every web pod reports the same count from the etl_job table, hence max. The ARC page shows the error; the worker log line has event etl.job and outcome failed.
+              runbook: docs/observability.md#alerts
+  - name: a stuck import queue
+    interval: 1m
+    input_series:
+      - series: 'mira_etl_oldest_queued_age_seconds{job="ci-mira",namespace="default",pod="web-a"}'
+        values: '0 0 1000+60x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: MiraImportQueueStuck
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: An import has waited more than 15 minutes without starting
+              description: No worker is claiming jobs, or all of them are busy. Check that the worker pod runs and its log.
+              runbook: docs/observability.md#alerts
+  - name: no scraped web pod
+    interval: 1m
+    input_series:
+      - series: 'up{job="ci-mira",namespace="default",pod="web-a"}'
+        values: '1 1 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MiraNotScraped
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: MiraNotScraped
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: No MIRA web pod is being scraped
+              description: Either no pod is ready (it is then not an endpoint of the Service) or /metrics refuses the scrape (the METRICS_TOKEN Secret does not match). Metrics-based alerts are blind meanwhile.
+              runbook: docs/observability.md#alerts
+  - name: postgres backup and archiving alerts from the runbook
+    interval: 1m
+    input_series:
+      # the backup fails 2 hours in; archiving fails 2 hours in too
+      - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="mira",pod="mira-pg-1"}'
+        values: '0x1900'
+      - series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="mira",pod="mira-pg-1"}'
+        values: '0x120 36000x1780'
+      - series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="mira",pod="mira-pg-1"}'
+        values: '1000x1900'
+      - series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="mira",pod="mira-pg-1"}'
+        values: '0x120 2000x1780'
+      - series: 'cnpg_backends_total{namespace="mira",pod="mira-pg-1",datname="mira"}'
+        values: '90x1900'
+      - series: 'cnpg_pg_settings_setting{namespace="mira",pod="mira-pg-1",name="max_connections"}'
+        values: '100x1900'
+      # another cluster's metrics must not match
+      - series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="other",pod="other-1"}'
+        values: '9000x1900'
+      - series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="other",pod="other-1"}'
+        values: '1000x1900'
+    alert_rule_test:
+      - eval_time: 5h
+        alertname: MiraPostgresBackupFailed
+        exp_alerts:
+          - exp_labels: { severity: critical, namespace: mira, pod: mira-pg-1 }
+            exp_annotations:
+              summary: The last Postgres backup failed
+              description: The newest failed backup is more recent than the newest good one (docs/postgres-runbook.md section 1; the second signal there, LastBackupSucceeded, is this same fact). Unverified metric name.
+              runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on
+      - eval_time: 30h
+        alertname: MiraPostgresBackupTooOld
+        exp_alerts:
+          - exp_labels: { severity: critical, namespace: mira, pod: mira-pg-1 }
+            exp_annotations:
+              summary: No good Postgres backup for 26 hours
+              description: The daily backup runs at 02:00, so a gap of 26 hours means one was missed. Unverified metric name.
+              runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on
+      - eval_time: 20h
+        alertname: MiraPostgresBackupTooOld
+        exp_alerts: []
+      - eval_time: 5h
+        alertname: MiraPostgresArchivingFailing
+        exp_alerts:
+          - exp_labels: { severity: critical, namespace: mira, pod: mira-pg-1 }
+            exp_annotations:
+              summary: Postgres is failing to archive WAL
+              description: The last failure is newer than the last success. WAL piles up on the volume until it archives again (the ContinuousArchiving condition is this fact). Unverified metric name.
+              runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on
+      - eval_time: 5h
+        alertname: MiraPostgresConnectionsHigh
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: mira, pod: mira-pg-1 }
+            exp_annotations:
+              summary: Postgres uses more than 80% of max_connections
+              description: Replicas x config.db.poolMax plus the worker, the migration Job and the retention job must stay under max_connections (docs/infrastructure.md). Unverified metric name.
+              runbook: docs/postgres-runbook.md#1-daily-checks-and-what-to-alert-on

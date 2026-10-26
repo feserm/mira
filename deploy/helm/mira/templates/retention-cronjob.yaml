@@ -1,0 +1,75 @@
+{{- if .Values.retention.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "mira.fullname" . }}-retention
+  labels:
+    {{- include "mira.retentionLabels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.retention.schedule | quote }}
+  # Never two at once: a run that overlaps the next would only compete for the same rows.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ .Values.retention.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "mira.retentionSelectorLabels" . | nindent 12 }}
+            {{- with .Values.podLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        spec:
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "mira.serviceAccountName" . }}
+          automountServiceAccountToken: false
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: retention
+              image: {{ include "mira.image" . | quote }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["node", "retention.js"]
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              # Only what the job reads: the DML-only database URL, TLS, and its own two settings.
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    {{- include "mira.secretKeyRef" (dict "ref" .Values.secrets.database "path" "secrets.database") | nindent 20 }}
+                {{- with .Values.config.db.ssl }}
+                - name: DB_SSL
+                  value: {{ . | quote }}
+                {{- end }}
+                - name: REQUEST_LOGS_RETENTION_DAYS
+                  value: {{ .Values.retention.days | quote }}
+                - name: REQUEST_LOGS_RETENTION_BATCH
+                  value: {{ .Values.retention.batchSize | quote }}
+                {{- include "mira.dbCaEnv" . | nindent 16 }}
+              resources:
+                {{- toYaml .Values.retention.resources | nindent 16 }}
+              {{- if .Values.config.db.caSecret.name }}
+              volumeMounts:
+                {{- include "mira.dbCaVolumeMount" . | nindent 16 }}
+              {{- end }}
+          {{- if .Values.config.db.caSecret.name }}
+          volumes:
+            {{- include "mira.dbCaVolume" . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

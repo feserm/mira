@@ -50,6 +50,19 @@
 							"minLength": 1
 						}
 					}
+				},
+				"metricsToken": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"description": "Existing Secret holding METRICS_TOKEN (at least 32 characters); empty = /metrics does not exist (404)"
+						},
+						"key": {
+							"type": "string",
+							"minLength": 1
+						}
+					}
 				}
 			}
 		},
@@ -260,6 +273,115 @@
 					}
 				}
 			}
+		},
+		"retention": {
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"type": "boolean"
+				},
+				"schedule": {
+					"type": "string",
+					"pattern": "^\\S+( \\S+){4}$",
+					"description": "cron expression, five fields"
+				},
+				"days": {
+					"type": "integer",
+					"minimum": 30,
+					"description": "The dashboard's daily chart shows 30 days"
+				},
+				"batchSize": {
+					"type": "integer",
+					"minimum": 100,
+					"maximum": 100000
+				},
+				"activeDeadlineSeconds": {
+					"type": "integer",
+					"minimum": 60
+				}
+			}
+		},
+		"monitoring": {
+			"type": "object",
+			"properties": {
+				"serviceMonitor": {
+					"type": "object",
+					"properties": {
+						"enabled": {
+							"type": "boolean"
+						},
+						"interval": {
+							"type": "string",
+							"pattern": "^[0-9]+(ms|s|m|h)$"
+						},
+						"scrapeTimeout": {
+							"type": "string",
+							"pattern": "^[0-9]+(ms|s|m|h)$"
+						},
+						"labels": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							}
+						}
+					}
+				},
+				"prometheusRule": {
+					"type": "object",
+					"properties": {
+						"enabled": {
+							"type": "boolean"
+						},
+						"labels": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							}
+						},
+						"errorRatio": {
+							"type": "number",
+							"exclusiveMinimum": 0,
+							"maximum": 1
+						},
+						"slowRequestSeconds": {
+							"type": "number",
+							"exclusiveMinimum": 0
+						},
+						"importQueueAgeSeconds": {
+							"type": "integer",
+							"minimum": 60
+						},
+						"postgres": {
+							"type": "object",
+							"properties": {
+								"enabled": {
+									"type": "boolean"
+								},
+								"namespace": {
+									"type": "string"
+								},
+								"clusterName": {
+									"type": "string",
+									"minLength": 1
+								},
+								"selector": {
+									"type": "string",
+									"description": "Prometheus label matchers, e.g. cnpg_cluster=\"mira-pg\""
+								},
+								"backupMaxAgeHours": {
+									"type": "integer",
+									"minimum": 1
+								},
+								"connectionRatio": {
+									"type": "number",
+									"exclusiveMinimum": 0,
+									"maximum": 1
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	},
 	"if": {
@@ -304,5 +426,46 @@
 				}
 			}
 		}
-	}
+	},
+	"allOf": [
+		{
+			"if": {
+				"properties": {
+					"monitoring": {
+						"properties": {
+							"serviceMonitor": {
+								"properties": {
+									"enabled": {
+										"const": true
+									}
+								},
+								"required": ["enabled"]
+							}
+						},
+						"required": ["serviceMonitor"]
+					}
+				},
+				"required": ["monitoring"]
+			},
+			"then": {
+				"properties": {
+					"secrets": {
+						"properties": {
+							"metricsToken": {
+								"properties": {
+									"name": {
+										"type": "string",
+										"minLength": 1
+									}
+								},
+								"required": ["name"]
+							}
+						},
+						"required": ["metricsToken"]
+					}
+				},
+				"required": ["secrets"]
+			}
+		}
+	]
 }
