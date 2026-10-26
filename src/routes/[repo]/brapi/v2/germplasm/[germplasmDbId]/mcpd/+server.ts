@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { germplasm, observationUnit } from '$lib/server/db/schema';
-import { resolveArcId } from '$lib/server/brapi/arc';
+import { resolveReadableArc } from '$lib/server/brapi/arc';
 import type { GermplasmMcpd, StorageTypeCode } from '$lib/types/brapi/germplasm';
 import { brapiJson, brapiSingleResponse, isDbId } from '$lib/server/brapi/response';
 import { authenticateBrapi } from '$lib/server/brapi/auth';
@@ -11,7 +11,7 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async (event) => {
 	await authenticateBrapi(event);
 
-	const arcId = await resolveArcId(event.params.repo);
+	const arcId = await resolveReadableArc(event);
 	const { germplasmDbId } = event.params;
 	if (!isDbId(germplasmDbId)) error(404, `Unknown germplasmDbId: "${germplasmDbId}"`);
 

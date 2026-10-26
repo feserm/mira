@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { resolveArcId } from '$lib/server/brapi/arc';
+import { resolveReadableArc } from '$lib/server/brapi/arc';
 import type { BrapiServerInfo, BrapiService } from '$lib/types/brapi/core';
 import { brapiJson, brapiSingleResponse } from '$lib/server/brapi/response';
 import { authenticateBrapi } from '$lib/server/brapi/auth';
@@ -47,7 +47,7 @@ function parseContentType(param: string, value: string | null): string | undefin
 export const GET: RequestHandler = async (event) => {
 	await authenticateBrapi(event);
 
-	await resolveArcId(event.params.repo);
+	await resolveReadableArc(event);
 
 	const params = event.url.searchParams;
 	const contentType =

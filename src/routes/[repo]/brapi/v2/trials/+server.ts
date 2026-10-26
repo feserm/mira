@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { trial, program, trialContact, contact, study } from '$lib/server/db/schema';
-import { resolveArcId } from '$lib/server/brapi/arc';
+import { resolveReadableArc } from '$lib/server/brapi/arc';
 import type { BrapiTrial, BrapiContact } from '$lib/types/brapi/core';
 import {
 	brapiJson,
@@ -58,7 +58,7 @@ function parseDate(param: string, value: string | null): string | undefined {
 export const GET: RequestHandler = async (event) => {
 	await authenticateBrapi(event);
 
-	const arcId = await resolveArcId(event.params.repo);
+	const arcId = await resolveReadableArc(event);
 
 	const params = event.url.searchParams;
 	const { page, pageSize } = parseBrapiPagination(params);
