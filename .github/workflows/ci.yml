@@ -58,6 +58,7 @@ jobs:
       - run: pnpm build
       - run: pnpm build:migrate
       - run: pnpm build:worker
+      - run: pnpm build:retention
 
   audit:
     name: Dependency audit

@@ -9,13 +9,13 @@ WORKDIR /app
 COPY package.json ./
 RUN corepack enable && corepack install
 
-# --- build: all dependencies, then the app bundle, the migration runner and the ETL worker ---
+# --- build: all dependencies, then the app bundle, the migration runner, the ETL worker and the retention job ---
 FROM base AS build
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 # No env vars are needed to build; they are validated when the server starts.
-RUN pnpm build && pnpm build:migrate && pnpm build:worker
+RUN pnpm build && pnpm build:migrate && pnpm build:worker && pnpm build:retention
 
 # --- prod-deps: production dependencies only (adapter-node leaves "dependencies" external) ---
 FROM base AS prod-deps
@@ -38,6 +38,7 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
 COPY --from=build /app/build-migrate/migrate.js ./migrate.js
 COPY --from=build /app/build-worker/worker.js ./worker.js
+COPY --from=build /app/build-retention/retention.js ./retention.js
 COPY --from=build /app/drizzle ./drizzle
 COPY package.json ./
 # Built-in unprivileged user of the node image (UID/GID 1000). The app writes nothing to disk.
