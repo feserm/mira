@@ -3,6 +3,7 @@ import { playwright } from '@vitest/browser-playwright';
 import tailwindcss from '@tailwindcss/vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { cspDirectives } from './src/lib/server/csp-directives.ts';
 
 export default defineConfig({
 	plugins: [
@@ -14,6 +15,9 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter(),
+			// Nonces, because every page is rendered per request. Whether the header blocks or only reports
+			// is a run-time setting (CSP_MODE, security-headers.ts).
+			csp: { mode: 'nonce', directives: cspDirectives },
 			typescript: {
 				config: (config) => {
 					config.include.push('../drizzle.config.ts');

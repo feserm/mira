@@ -255,6 +255,16 @@ export const tokenRateLimitHits = counter(
 	'BrAPI requests refused with 429 because an API token used up its per-minute budget.'
 );
 
+export const authRateLimitHits = counter(
+	'mira_auth_rate_limit_hits_total',
+	'Requests to /api/auth/* refused with 429 by the sign-in rate limiter (per client address and path).'
+);
+export const cspViolations = counter(
+	'mira_csp_violations_total',
+	'Content-Security-Policy violation reports browsers sent, by directive and whether the policy blocked (enforce) or only reported.',
+	['directive', 'disposition']
+);
+
 // --- ARC access check (arc-access.ts) -----------------------------------------------------------
 export const arcAccessOutcomes = counter(
 	'mira_arc_access_total',

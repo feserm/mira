@@ -45,6 +45,33 @@ describe('validateEnv', () => {
 		expect(JSON.stringify(short.errors)).not.toContain('short-secret');
 	});
 
+	it('CSP_MODE defaults to report-only, and takes enforce, report-only or off', () => {
+		expect(validateEnv(valid).config.security.cspMode).toBe('report-only');
+		for (const mode of ['enforce', 'report-only', 'off'])
+			expect(
+				validateEnv({ ...valid, CSP_MODE: ` ${mode.toUpperCase()} ` }).config.security.cspMode
+			).toBe(mode);
+		expect(validateEnv({ ...valid, CSP_MODE: 'strict' }).errors).toEqual([
+			'CSP_MODE must be one of: enforce, report-only, off'
+		]);
+	});
+
+	it('HSTS_MAX_AGE defaults to 180 days, and 0 turns the header off', () => {
+		expect(validateEnv(valid).config.security.hstsMaxAgeSeconds).toBe(15_552_000);
+		expect(validateEnv({ ...valid, HSTS_MAX_AGE: '0' }).config.security.hstsMaxAgeSeconds).toBe(0);
+		expect(validateEnv({ ...valid, HSTS_MAX_AGE: '-1' }).errors).toEqual([
+			'HSTS_MAX_AGE must be an integer >= 0'
+		]);
+	});
+
+	it('XFF_DEPTH is unset by default (the header is not trusted) and must be 1 or more', () => {
+		expect(validateEnv(valid).config.proxy.xffDepth).toBeUndefined();
+		expect(validateEnv({ ...valid, XFF_DEPTH: '2' }).config.proxy.xffDepth).toBe(2);
+		expect(validateEnv({ ...valid, XFF_DEPTH: '0' }).errors).toEqual([
+			'XFF_DEPTH must be an integer >= 1'
+		]);
+	});
+
 	it('parses optional settings', () => {
 		const { config, errors } = validateEnv({
 			...valid,
