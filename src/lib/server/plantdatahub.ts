@@ -47,6 +47,21 @@ async function gitlabFetch(path: string, token: string): Promise<Response> {
 	return res;
 }
 
+/** One project, as lightly as possible (no statistics, no license), for the per-request access check
+ *  (`arc-access.ts`). Without a `token` the call is anonymous. Redirects are not followed: with public
+ *  access restricted GitLab redirects an anonymous API call to its sign-in page, and the HTML behind
+ *  the redirect must never be mistaken for an answer. The caller reads the status. */
+export function fetchProjectForAccess(id: number, token?: string): Promise<Response> {
+	return fetchWithTimeout(
+		`${PLANTDATAHUB_URL}/api/v4/projects/${id}`,
+		{
+			redirect: 'manual',
+			headers: token ? { Authorization: `Bearer ${token}` } : undefined
+		},
+		plantdatahubLimits
+	);
+}
+
 export interface ListArcsParams {
 	search: string;
 	page: number;
