@@ -104,6 +104,10 @@ transient, readable job error. The existing 5 s NCBI timeout is kept (best-effor
 **Files.** Queue: `src/lib/server/etl/queue.ts` (table in `db/schema/staging/etl-job.ts`, migration
 `0003_etl_job`). Claim loop: `etl/runner.ts`. Steps: `etl/pipeline.ts` (take a `StepContext`, return
 `{ok}` or `{error, transient}`), `etl/execute.ts` (what each job kind runs). Worker entry:
+The worker logs one JSON line per job step and per outcome (job id, ARC, kind, attempt, step timings), with the same
+messages as before; see [observability.md](observability.md) section Logs. It serves no port, so it has no `/metrics`: the
+queue's state is exported by the web pods from `etl_job`.
+
 `scripts/worker.ts`, bundled by `pnpm build:worker` (`vite.worker.config.ts` aliases `$lib` and the two
 SvelteKit env modules to shims). Token: `etl/worker-auth.ts`, sharing `auth-options.ts` with `auth.ts`.
 Timeouts: `fetch-timeout.ts`.

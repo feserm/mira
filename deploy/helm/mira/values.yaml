@@ -179,7 +179,7 @@ worker:
 # --- Request log retention (S2.9) ----------------------------------------------------------------
 # A CronJob that deletes request_logs rows older than `days`, in batches, with the same image
 # (`node retention.js`) and the app's DML-only database role (secrets.database): no DDL. It reads only
-# DATABASE_URL, DB_SSL and the two settings below. Runbook: docs/observability.md section 5.
+# DATABASE_URL, DB_SSL and the two settings below. Runbook: docs/observability.md, section Request log retention.
 retention:
   enabled: true
   # 03:17 UTC every day, off the hour and after the 02:00 database backup.

@@ -18,7 +18,7 @@ release `mira` (Deployments `mira` and `mira-worker`). Adjust to your install.
 - [ ] `kubectl -n mira get cluster mira-pg -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}'`. Expected: `ContinuousArchiving=True`, `LastBackupSucceeded=True`, `Ready=True`.
 - [ ] WAL is leaving the volume. On the primary: `kubectl -n mira exec "$PRIMARY" -c postgres -- psql -At -c "select last_archived_time, now() - last_archived_time as behind, failed_count from pg_stat_archiver"`. Expected: `behind` under about 6 minutes, and a `failed_count` that does not grow.
 
-Alerting is S2.8. The signals to wire up: `barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp` newer than `..._last_available_backup_timestamp`,
+Alerting is part of the chart (`monitoring.prometheusRule`, written in S2.8, see [observability.md](observability.md) section Alerts; **not yet verified against a running operator**). The signals it watches: `barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp` newer than `..._last_available_backup_timestamp`,
 no new `..._last_available_backup_timestamp` for 26 hours, conditions `ContinuousArchiving` and `LastBackupSucceeded` not `True`,
 `cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time`, and the connection ratio
 `cnpg_backends_total / cnpg_pg_settings_setting{name="max_connections"}` above 0.8.

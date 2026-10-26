@@ -4,3 +4,4 @@ One file per decision, numbered `NNNN-short-title.md`: context, decision, altern
 
 - [0001: API tokens for BrAPI clients](0001-api-tokens.md)
 - [0002: Per-ARC access control on PLANTdataHUB](0002-arc-access-control.md)
+- [0003: Observability and request log retention](0003-observability.md)

@@ -51,6 +51,9 @@ network.
 | DML role      | `test-support/dml-db.test.ts`                                                                                                  | yes            | the app role cannot run DDL; the rest of the suite runs as that role                                                                            |
 | ARC access    | `arc-access.test.ts`, `brapi/v2/arc-access.test.ts`, `arcs/[id]/arc-access.test.ts`, the dashboard and `/account/tokens` cases | yes            | S2.4b: who may read an ARC, against a stubbed PLANTdataHUB (`gitlab-stub.ts`); every handler and page entry point is found from the file system |
 
+| Observability | `log.test.ts`, `metrics.test.ts`, `hooks.server.test.ts`, `routes/metrics/server.test.ts`, the metric cases in `arc-access.test.ts`, `brapi/v2/auth.test.ts`, `request-logs.test.ts`, the log cases in `etl/runner.test.ts` | the metrics route and the retention and analytics suites yes | S2.8: JSON line shape, request id (accepted, limited, generated, echoed), one line per request, probes quiet, no token, cookie, query string, path or slug in the log or in `/metrics`, `/metrics` protection, label vocabulary, counters |
+| Retention and analytics | `db/retention.test.ts`, `db/request-analytics.test.ts` | yes | S2.9: old rows go and new rows stay, batches, idempotent, as the DML role; route patterns and old raw paths group together |
+
 Handlers are called directly with a fake `RequestEvent`. "Who is the caller" lives in one helper
 (`test-support/brapi-event.ts`, `authenticatedLocals()`); when sessions G, H and I change how the user is
 established, edit that helper. Since S2.4 `callBrapi` also takes request `headers` (`bearer(token)`) and returns the

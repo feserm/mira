@@ -186,6 +186,20 @@ backfill, then remove one release later). For a destructive migration the only w
 restore. Roll back _the app_ with `helm rollback mira <revision> -n mira`; pin an older `image.tag`
 rather than relying on `latest`, which does not exist.
 
+## Monitoring and retention
+
+Details, the metric list and the alert table: [docs/observability.md](../../../docs/observability.md).
+
+- **`/metrics`** exists only when `secrets.metricsToken.name` names a Secret with `METRICS_TOKEN` (at least 32
+  characters); the web pods read it. Without it the endpoint answers 404.
+- **`monitoring.serviceMonitor.enabled`** and **`monitoring.prometheusRule.enabled`** (both `false` by default: they
+  need the Prometheus operator CRDs). The ServiceMonitor needs the token Secret; the schema refuses it otherwise. Set
+  `monitoring.*.labels` to whatever your Prometheus selects by (`release: kube-prometheus-stack`, for instance). The
+  rules include the Postgres backup, archiving and connection alerts (`monitoring.prometheusRule.postgres.*`).
+- **`retention.*`** renders a CronJob `<release>-mira-retention` (default on, 90 days, daily 03:17 UTC) that runs
+  `node retention.js` with `secrets.database` (the DML-only role), batched. `retention.days` must be at least 30.
+- Example values: [ci/monitoring-values.yaml](ci/monitoring-values.yaml); the rule tests: [ci/rules-test.yaml](ci/rules-test.yaml).
+
 ## Values
 
 See [values.yaml](values.yaml) (every value is commented) and [values.schema.json](values.schema.json).
@@ -195,7 +209,7 @@ See [values.yaml](values.yaml) (every value is commented) and [values.schema.jso
 - NetworkPolicies and Pod Security admission labels (S2.6)
 - Postgres itself: manifests are in [deploy/postgres](../../postgres/README.md), not part of this chart
 - OIDC application registration: [docs/oidc-setup.md](../../../docs/oidc-setup.md)
-- Metrics, ServiceMonitor, alerts (S2.8)
+- Prometheus itself, Alertmanager and a log shipper (the chart renders a ServiceMonitor and a PrometheusRule behind flags, see [Monitoring](#monitoring-and-retention))
 - Secret creation, HPA, certificates (cert-manager and the ingress controller are assumed)
 
 ## Checks
@@ -205,5 +219,7 @@ helm lint deploy/helm/mira -f deploy/helm/mira/ci/default-values.yaml
 helm template mira deploy/helm/mira -f deploy/helm/mira/ci/default-values.yaml | kubeconform -strict -summary -
 ```
 
-CI runs these for the six value sets in [ci/](ci/) (default, single replica, no ingress, worker
-disabled, scaled worker, CloudNativePG) and checks that a bad `worker.*` or `config.db.ssl` value is rejected.
+CI runs these for the seven value sets in [ci/](ci/) (default, single replica, no ingress, worker
+disabled, scaled worker, CloudNativePG, monitoring), checks that the monitoring objects are absent by
+default and present with the flags, runs `promtool check rules` and `promtool test rules` on the rendered alert rules,
+and checks that a bad `worker.*`, `config.db.ssl`, `retention.days` or a ServiceMonitor without a token is rejected.

@@ -8,7 +8,7 @@
 {{- /* Database metrics come from CloudNativePG's own scrape, usually a different namespace and labels. */}}
 {{- $pgNs := default $ns $pg.namespace }}
 {{- $d := default (printf `namespace="%s",pod=~"%s-[0-9]+"` $pgNs $pg.clusterName) $pg.selector }}
-# Alert rules for MIRA (docs/observability.md section 4). Needs the Prometheus operator CRDs. The
+# Alert rules for MIRA (docs/observability.md, section Alerts). Needs the Prometheus operator CRDs. The
 # `kube_*` series come from kube-state-metrics; the `cnpg_*` and `barman_cloud_*` series come from
 # CloudNativePG and its Barman Cloud plugin, not from MIRA, and their names are the ones in
 # docs/postgres-runbook.md section 1: not checked against a running operator.
