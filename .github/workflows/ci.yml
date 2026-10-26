@@ -87,14 +87,16 @@ jobs:
           set -eu
           for extra in "" ci/single-replica-values.yaml ci/no-ingress-values.yaml \
             ci/worker-disabled-values.yaml ci/worker-scaled-values.yaml ci/cnpg-values.yaml \
-            ci/monitoring-values.yaml; do
+            ci/monitoring-values.yaml ci/network-policy-values.yaml ci/network-policy-cilium-values.yaml \
+            ci/network-policy-https-values.yaml; do
             set --
             [ -z "$extra" ] || set -- -f "$CHART/$extra"
             helm lint "$CHART" -f "$CHART/ci/default-values.yaml" "$@"
-            # ServiceMonitor and PrometheusRule are CRDs of the Prometheus operator: no schema here, and
-            # they are only rendered by ci/monitoring-values.yaml (the flags are off by default).
+            # ServiceMonitor, PrometheusRule and CiliumNetworkPolicy are CRDs: no schema here, and they are
+            # only rendered by ci/monitoring-values.yaml and ci/network-policy-cilium-values.yaml (off by default).
             helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" "$@" \
-              | docker run --rm -i "$KUBECONFORM_IMAGE" -strict -summary -skip ServiceMonitor,PrometheusRule -
+              | docker run --rm -i "$KUBECONFORM_IMAGE" -strict -summary \
+                  -skip ServiceMonitor,PrometheusRule,CiliumNetworkPolicy -
           done
       - name: Monitoring and retention flags
         run: |
@@ -118,6 +120,33 @@ jobs:
           render -f "$CHART/ci/monitoring-values.yaml" --set retention.enabled=false > no-retention.yaml
           if grep -qE '^kind: CronJob$|MiraRetentionNotRunning' no-retention.yaml; then
             echo "retention.enabled=false still renders the CronJob or its alert"; exit 1
+          fi
+      - name: Pod Security restricted and network policies, per pod kind
+        run: |
+          set -eu
+          # shellcheck disable=SC2086 # $flags is a word list on purpose
+          check() { # the flags of check-rendered.mjs, then the extra helm arguments after --
+            flags=""
+            while [ "$1" != -- ]; do flags="$flags $1"; shift; done; shift
+            helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" "$@" \
+              | docker run --rm -i "$YQ_IMAGE" -o=json -I=0 ea '[.]' - \
+              | node "$CHART/ci/check-rendered.mjs" $flags
+          }
+          # Off by default: no policy objects. Every pod kind meets the restricted profile either way.
+          check --
+          check --policies -- -f "$CHART/ci/network-policy-values.yaml"
+          check --policies --mode cilium -- -f "$CHART/ci/network-policy-cilium-values.yaml"
+          check --policies --mode https --pg-port 6432 --issuer-port 8443 --extra-port=3128 -- \
+            -f "$CHART/ci/network-policy-https-values.yaml"
+          # The checker must be able to fail: each of these has to be refused.
+          for bad in "podSecurityContext.runAsNonRoot=false" "securityContext.allowPrivilegeEscalation=true" \
+            "securityContext.readOnlyRootFilesystem=false" "podSecurityContext.seccompProfile.type=Unconfined"; do
+            if check -- --set "$bad" 2> err.log; then echo "check-rendered accepted $bad"; exit 1; fi
+          done
+          if check --policies -- -f "$CHART/ci/network-policy-values.yaml" \
+            --set 'networkPolicy.extraEgress[0].to[0].ipBlock.cidr=10.1.1.1/32' \
+            --set 'networkPolicy.extraEgress[0].ports[0].port=8080' 2> err.log; then
+            echo "check-rendered accepted an extra egress port"; exit 1
           fi
       - name: Alert rules pass promtool
         run: |
@@ -156,6 +185,15 @@ jobs:
             echo "expected a failure for retention.days=10"; exit 1
           fi
           grep -q "retention.days" err.log
+          # NetworkPolicies need addresses for PLANTdataHUB in cidr mode: no guessing, no silent default.
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set networkPolicy.enabled=true 2> err.log; then
+            echo "expected a failure for network policies without PLANTdataHUB addresses"; exit 1
+          fi
+          grep -q "networkPolicy.egress.plantdatahub.cidrs" err.log
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set networkPolicy.egress.mode=fqdn 2> err.log; then
+            echo "expected a failure for an unknown egress mode"; exit 1
+          fi
+          grep -q "networkPolicy.egress.mode" err.log
 
   postgres:
     name: Postgres manifests
