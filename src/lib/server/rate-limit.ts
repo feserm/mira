@@ -24,7 +24,10 @@ export function createRateLimiter(options: { max: number; windowMs: number }): R
 			}
 			w.count++;
 			if (w.count <= options.max) return { allowed: true, retryAfterSeconds: 0 };
-			return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((w.resetAt - now) / 1000)) };
+			return {
+				allowed: false,
+				retryAfterSeconds: Math.max(1, Math.ceil((w.resetAt - now) / 1000))
+			};
 		}
 	};
 }

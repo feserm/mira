@@ -151,7 +151,8 @@ export function touchLastUsed(
 	token: Pick<VerifiedToken, 'tokenId' | 'lastUsedAt'>,
 	now = new Date()
 ): void {
-	if (token.lastUsedAt && now.getTime() - token.lastUsedAt.getTime() < LAST_USED_INTERVAL_MS) return;
+	if (token.lastUsedAt && now.getTime() - token.lastUsedAt.getTime() < LAST_USED_INTERVAL_MS)
+		return;
 	if (writing.has(token.tokenId)) return;
 	writing.add(token.tokenId);
 	void (async () => {
