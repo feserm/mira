@@ -1,0 +1,5 @@
+# NetworkPolicies on, egress to PLANTdataHUB and NCBI by host name through Cilium (S2.6).
+networkPolicy:
+  enabled: true
+  egress:
+    mode: cilium

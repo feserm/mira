@@ -1,0 +1,12 @@
+# NetworkPolicies on (S2.6), cidr mode, the metrics scrape allowed. The addresses are documentation
+# addresses (RFC 5737), not the real ones; real values come from the operator of the cluster.
+secrets:
+  metricsToken:
+    name: mira-metrics
+networkPolicy:
+  enabled: true
+  egress:
+    plantdatahub:
+      cidrs: [192.0.2.10/32]
+    ncbi:
+      cidrs: [198.51.100.0/24]

@@ -148,3 +148,114 @@ app.kubernetes.io/name: {{ include "mira.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: retention
 {{- end }}
+
+{{/* Labels of the migration Job's pods (the Job and the NetworkPolicy must agree). */}}
+{{- define "mira.migrateSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "mira.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: migrate
+{{- end }}
+
+{{/* Labels every pod of the release has, whatever its kind: what the default-deny policy selects. */}}
+{{- define "mira.releaseSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "mira.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/* ---- NetworkPolicy rule fragments (S2.6). Each yields list items for an `egress:` list. ---- */}}
+
+{{/* The port of config.oidc.issuerUrl: the one in the URL, else 443 (https) or 80 (http). */}}
+{{- define "mira.issuerPort" -}}
+{{- $u := urlParse .Values.config.oidc.issuerUrl -}}
+{{- if contains ":" $u.host -}}
+{{- last (splitList ":" $u.host) -}}
+{{- else if eq $u.scheme "http" -}}
+80
+{{- else -}}
+443
+{{- end -}}
+{{- end }}
+
+{{- define "mira.np.dns" -}}
+{{- $dns := .Values.networkPolicy.dns -}}
+- to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ $dns.namespace | quote }}
+      podSelector:
+        matchLabels:
+          {{- toYaml $dns.podSelector | nindent 10 }}
+    {{- range $dns.cidrs }}
+    - ipBlock:
+        cidr: {{ . | quote }}
+    {{- end }}
+  ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+{{- end }}
+
+{{- define "mira.np.postgres" -}}
+{{- $pg := .Values.networkPolicy.postgres -}}
+- to:
+    {{- if $pg.cidrs }}
+    {{- range $pg.cidrs }}
+    - ipBlock:
+        cidr: {{ . | quote }}
+    {{- end }}
+    {{- else }}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ default .Release.Namespace $pg.namespace | quote }}
+      podSelector:
+        matchLabels:
+          {{- toYaml $pg.podSelector | nindent 10 }}
+    {{- end }}
+  ports:
+    - protocol: TCP
+      port: {{ $pg.port }}
+{{- end }}
+
+{{/* PLANTdataHUB (and, for the worker, NCBI). Takes {root, ncbi}. Nothing in cilium mode: the
+     CiliumNetworkPolicy carries the host names there. */}}
+{{- define "mira.np.hosts" -}}
+{{- $np := .root.Values.networkPolicy -}}
+{{- $port := int (include "mira.issuerPort" .root) -}}
+{{- if eq $np.egress.mode "cidr" -}}
+{{- if not $np.egress.plantdatahub.cidrs -}}
+{{- fail "networkPolicy.egress.plantdatahub.cidrs is required in cidr mode: the addresses of the host in config.oidc.issuerUrl (a NetworkPolicy cannot name a host). Or set networkPolicy.egress.mode to cilium or https, see docs/network-policy.md" -}}
+{{- end }}
+- to:
+    {{- range $np.egress.plantdatahub.cidrs }}
+    - ipBlock:
+        cidr: {{ . | quote }}
+    {{- end }}
+  ports:
+    - protocol: TCP
+      port: {{ $port }}
+{{- if and .ncbi $np.egress.ncbi.enabled $np.egress.ncbi.cidrs }}
+- to:
+    {{- range $np.egress.ncbi.cidrs }}
+    - ipBlock:
+        cidr: {{ . | quote }}
+    {{- end }}
+  ports:
+    - protocol: TCP
+      port: 443
+{{- end }}
+{{- else if eq $np.egress.mode "https" }}
+- to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+          {{- toYaml $np.egress.httpsExcept | nindent 10 }}
+  ports:
+    - protocol: TCP
+      port: 443
+    {{- if ne $port 443 }}
+    - protocol: TCP
+      port: {{ $port }}
+    {{- end }}
+{{- end }}
+{{- end }}

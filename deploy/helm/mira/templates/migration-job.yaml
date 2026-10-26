@@ -22,9 +22,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "mira.name" . }}
-        app.kubernetes.io/instance: {{ .Release.Name }}
-        app.kubernetes.io/component: migrate
+        {{- include "mira.migrateSelectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
       {{- with .Values.imagePullSecrets }}

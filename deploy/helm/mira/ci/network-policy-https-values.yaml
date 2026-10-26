@@ -1,0 +1,21 @@
+# NetworkPolicies on, egress to any public HTTPS address (S2.6), an external Postgres, a custom DNS and
+# a non-default issuer port.
+config:
+  oidc:
+    issuerUrl: https://git.example.org:8443
+networkPolicy:
+  enabled: true
+  dns:
+    cidrs: [169.254.20.10/32]
+  postgres:
+    cidrs: [203.0.113.0/28]
+    port: 6432
+  egress:
+    mode: https
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.64/32
+      ports:
+        - protocol: TCP
+          port: 3128

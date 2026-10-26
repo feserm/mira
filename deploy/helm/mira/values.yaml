@@ -228,6 +228,74 @@ monitoring:
       backupMaxAgeHours: 26
       connectionRatio: 0.8
 
+# --- Network policies (S2.6) ---------------------------------------------------------------------
+# Off by default, on purpose: the chart cannot know three cluster facts (the namespace of the ingress
+# controller, whether the CNI enforces NetworkPolicy, and the addresses of PLANTdataHUB), and a policy
+# with a wrong guess takes login and imports down. Turn it on once the values below are set, first on
+# staging. When on: every pod of the release is denied all ingress and egress, then each kind gets only
+# what it needs (docs/network-policy.md):
+#   web        in: ingress controller (and Prometheus, with secrets.metricsToken) on containerPort
+#              out: Postgres, PLANTdataHUB, DNS
+#   worker     in: nothing.  out: Postgres, PLANTdataHUB, NCBI, DNS
+#   migrate    out: Postgres, DNS      (the Helm hook Job)
+#   retention  out: Postgres, DNS      (the CronJob)
+# Needs a CNI that enforces NetworkPolicy; on one that does not, the objects are accepted and ignored.
+networkPolicy:
+  enabled: false
+  # Where traffic to the web pods comes from. A controller on the host network is not a pod: use
+  # extraIngress for its node addresses.
+  ingressController:
+    namespace: ingress-nginx
+    podSelector: {} # empty = every pod in that namespace
+  # Where the scrape comes from (only allowed when secrets.metricsToken.name is set).
+  prometheus:
+    namespace: monitoring
+    podSelector: {}
+  dns:
+    namespace: kube-system
+    podSelector:
+      k8s-app: kube-dns
+    # Extra DNS servers by address, e.g. [169.254.20.10/32] for NodeLocal DNSCache.
+    cidrs: []
+  postgres:
+    port: 5432
+    # In the cluster (CloudNativePG): the namespace the cluster runs in (empty = the release namespace) and
+    # the labels of its pods. CloudNativePG labels every instance pod cnpg.io/cluster=<cluster name>.
+    namespace: ''
+    podSelector:
+      cnpg.io/cluster: mira-pg
+    # Outside the cluster: addresses instead. When set, namespace and podSelector are ignored.
+    cidrs: []
+  # Egress to hosts. A NetworkPolicy cannot name a host, so there are three ways (docs/network-policy.md):
+  #   cidr   (default) the addresses you list below. Portable, but you must keep them current.
+  #   cilium a CiliumNetworkPolicy with toFQDNs for the host names. Needs Cilium; no addresses.
+  #   https  TCP 443 (and the issuer's port) to any address outside the private ranges in httpsExcept.
+  #          Works everywhere and needs no addresses, but allows every public HTTPS host.
+  egress:
+    mode: cidr
+    plantdatahub:
+      # The addresses of the host in config.oidc.issuerUrl. REQUIRED in cidr mode (the chart refuses to
+      # render without them): without them login, the ARC list and imports cannot work.
+      cidrs: []
+    ncbi:
+      # The worker looks up crop names at NCBI E-utils. Failure is already best effort (the column stays
+      # empty), so enabled=true with no cidrs only drops that lookup.
+      enabled: true
+      host: eutils.ncbi.nlm.nih.gov
+      cidrs: []
+    httpsExcept:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+      - 100.64.0.0/10
+      - 127.0.0.0/8
+  # Raw NetworkPolicy rules added to the web and worker pods (extraEgress) or the web pods (extraIngress):
+  # an egress proxy, a host-network ingress controller, a second database. The migration Job and the
+  # retention CronJob get only Postgres and DNS, whatever is set here.
+  extraEgress: []
+  extraIngress: []
+
 # --- Workload ------------------------------------------------------------------------------------
 containerPort: 3000
 
