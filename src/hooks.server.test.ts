@@ -13,7 +13,8 @@ vi.mock('$app/environment', () => ({ building: true }));
 vi.mock('$lib/server/env', () => ({
 	config: {
 		origin: 'https://mira.test',
-		security: { cspMode: 'report-only', hstsMaxAgeSeconds: 15_552_000 }
+		security: { cspMode: 'report-only', hstsMaxAgeSeconds: 15_552_000 },
+		proxy: { xffDepth: 1 }
 	}
 }));
 vi.mock('$lib/server/db', () => ({ closeDb: async () => {} }));

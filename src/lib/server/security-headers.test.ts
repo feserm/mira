@@ -105,15 +105,16 @@ describe('the Content-Security-Policy by mode', () => {
 });
 
 describe('the policy the app builds with', () => {
-	const joined = (name: keyof typeof cspDirectives) => cspDirectives[name].join(' ');
+	const directives = cspDirectives as Record<string, readonly string[]>;
+	const joined = (name: string) => (directives[name] ?? []).join(' ');
 
 	it('allows no inline or eval script and loads nothing from another site', () => {
 		expect(joined('script-src')).toBe('self');
-		for (const [name, sources] of Object.entries(cspDirectives)) {
+		for (const [name, sources] of Object.entries(directives)) {
 			if (name === 'style-src-attr') continue; // the one documented exception
-			expect(sources as readonly string[], name).not.toContain('unsafe-inline');
-			expect(sources as readonly string[], name).not.toContain('unsafe-eval');
-			expect((sources as readonly string[]).join(' '), name).not.toMatch(/https?:|\*/);
+			expect(sources, name).not.toContain('unsafe-inline');
+			expect(sources, name).not.toContain('unsafe-eval');
+			expect(sources.join(' '), name).not.toMatch(/https?:|\*/);
 		}
 	});
 

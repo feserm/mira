@@ -9,6 +9,7 @@ import { errorMessage, logger } from '$lib/server/log';
 import { logServerError, observeRequest } from '$lib/server/observability';
 import { securityHeaders } from '$lib/server/security-headers';
 import { CSP_REPORT_PATH } from '$lib/server/csp-directives';
+import { AUTH_PATH_PREFIX, observeAuthResponse, pinAuthClient } from '$lib/server/auth-rate-limit';
 
 // Probe and scrape paths bypass session lookup, request logging and request metrics: kubelet and
 // Prometheus send no cookies and must not write a log line or a request_logs row every few seconds.
@@ -55,7 +56,11 @@ const handleBetterAuth: Handle = async ({ event, resolve }) => {
 		event.locals.user = session.user;
 	}
 
-	return svelteKitHandler({ event, resolve, auth, building });
+	if (!event.url.pathname.startsWith(AUTH_PATH_PREFIX))
+		return svelteKitHandler({ event, resolve, auth, building });
+
+	pinAuthClient(event); // the client address the sign-in rate limit counts by
+	return observeAuthResponse(await svelteKitHandler({ event, resolve, auth, building }));
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
