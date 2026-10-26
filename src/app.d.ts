@@ -12,6 +12,8 @@ declare global {
 			// Set by `authenticateBrapi` (BrAPI routes only): a session cookie or an API token. S2.4b checks GitLab
 			// access for the token owner, so it reads `user` the same way for both.
 			authMethod?: 'session' | 'token';
+			// Set by `observeRequest` (observability.ts) for every request except the probes and /metrics.
+			requestId?: string;
 		}
 
 		// BrAPI errors also carry the standard `metadata.status` list (see `brapi/auth.ts`).

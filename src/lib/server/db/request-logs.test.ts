@@ -47,7 +47,7 @@ describe('flushAndStop', () => {
 	});
 
 	it('is bounded by the timeout when the database hangs', async () => {
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+		vi.spyOn(console, 'log').mockImplementation(() => {});
 		values.mockReturnValue(new Promise(() => {}));
 		const { enqueueRequestLog, flushAndStop } = await import('./request-logs');
 		enqueueRequestLog(log(1));
@@ -57,13 +57,30 @@ describe('flushAndStop', () => {
 	});
 
 	it('gives up after a failed insert instead of retrying forever', async () => {
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+		vi.spyOn(console, 'log').mockImplementation(() => {});
 		values.mockRejectedValue(new Error('down'));
 		const { enqueueRequestLog, flushAndStop } = await import('./request-logs');
 		enqueueRequestLog(log(1));
 		await flushAndStop();
 		expect(values).toHaveBeenCalledTimes(1);
 		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('counts rows written, failed batches and dropped rows, and reports the queue length', async () => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		const m = await import('$lib/server/metrics');
+		const { enqueueRequestLog, flushAndStop } = await import('./request-logs');
+
+		values.mockRejectedValue(new Error('down'));
+		for (let i = 0; i < 1005; i++) enqueueRequestLog(log(i)); // 5 over the queue limit
+		await vi.advanceTimersByTimeAsync(0);
+		expect(m.requestLogsDropped.value()).toBeGreaterThanOrEqual(5);
+		expect(m.requestLogsFlushFailures.value()).toBeGreaterThanOrEqual(1);
+		expect(await m.registry.render()).toMatch(/mira_request_logs_queue_length \d+/);
+
+		values.mockResolvedValue(undefined);
+		await flushAndStop();
+		expect(m.requestLogsFlushed.value()).toBeGreaterThan(0);
 	});
 
 	it('does not schedule new flushes after stopping', async () => {

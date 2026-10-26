@@ -10,6 +10,8 @@ export interface ServerConfig {
 	authSecret: string;
 	/** Lower-cased e-mail addresses made admin on sign-in (`ADMIN_EMAILS`). Empty: nobody is admin. */
 	adminEmails: string[];
+	/** Bearer token that opens `GET /metrics` (`METRICS_TOKEN`). Unset: the endpoint answers 404. */
+	metricsToken?: string;
 	oidc: {
 		issuerUrl: string;
 		clientId: string;
@@ -106,6 +108,11 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 		errors.push('ADMIN_EMAILS must be a comma separated list of e-mail addresses');
 	}
 
+	const metricsToken = get('METRICS_TOKEN');
+	if (metricsToken && metricsToken.length < MIN_SECRET_LENGTH) {
+		errors.push(`METRICS_TOKEN must be at least ${MIN_SECRET_LENGTH} characters`);
+	}
+
 	const issuerUrl = required('OIDC_ISSUER_URL');
 	if (issuerUrl) {
 		if (!parseUrl(issuerUrl)) {
@@ -169,6 +176,7 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 			origin,
 			authSecret,
 			adminEmails,
+			metricsToken: metricsToken || undefined,
 			oidc: {
 				issuerUrl,
 				clientId,
