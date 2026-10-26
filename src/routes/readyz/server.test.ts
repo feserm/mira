@@ -20,7 +20,7 @@ describe('GET /readyz', () => {
 	});
 
 	it('returns 503 when the query fails', async () => {
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+		vi.spyOn(console, 'log').mockImplementation(() => {});
 		execute.mockRejectedValue(new Error('connection refused'));
 		const response = await call();
 		expect(response.status).toBe(503);
@@ -28,7 +28,7 @@ describe('GET /readyz', () => {
 
 	it('returns 503 when the query hangs past the timeout', async () => {
 		vi.useFakeTimers();
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+		vi.spyOn(console, 'log').mockImplementation(() => {});
 		execute.mockReturnValue(new Promise(() => {}));
 		const pending = call();
 		await vi.advanceTimersByTimeAsync(2100);

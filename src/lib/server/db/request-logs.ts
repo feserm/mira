@@ -1,3 +1,11 @@
+import { errorMessage, logger } from '$lib/server/log';
+import {
+	registry,
+	requestLogsDropped,
+	requestLogsFlushed,
+	requestLogsFlushFailures,
+	requestLogsQueueLength
+} from '$lib/server/metrics';
 import { db } from './index';
 import { requestLogs } from './schema';
 
@@ -19,6 +27,15 @@ let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let consecutiveFailures = 0;
 let inflight: Promise<void> | undefined;
 let stopped = false;
+
+registry.collect('request-logs', () => requestLogsQueueLength.set(queue.length));
+
+function trimQueue(): void {
+	if (queue.length > MAX_QUEUE_SIZE) {
+		requestLogsDropped.inc({}, queue.length - MAX_QUEUE_SIZE);
+		queue.splice(0, queue.length - MAX_QUEUE_SIZE);
+	}
+}
 
 function scheduleFlush(delay: number): void {
 	if (stopped || flushTimer) return;
@@ -44,14 +61,15 @@ async function flushBatch(): Promise<void> {
 	try {
 		await db.insert(requestLogs).values(batch);
 		consecutiveFailures = 0;
+		requestLogsFlushed.inc({}, batch.length);
 	} catch (error) {
 		consecutiveFailures++;
-		console.error(
-			`Failed to flush ${batch.length} request log(s) (attempt ${consecutiveFailures}):`,
-			error
+		requestLogsFlushFailures.inc();
+		logger.error(
+			`Failed to flush ${batch.length} request log(s) (attempt ${consecutiveFailures}): ${errorMessage(error)}`
 		);
 		queue.unshift(...batch);
-		if (queue.length > MAX_QUEUE_SIZE) queue.splice(0, queue.length - MAX_QUEUE_SIZE);
+		trimQueue();
 	} finally {
 		flushInProgress = false;
 		if (queue.length > 0) {
@@ -68,7 +86,7 @@ async function flushBatch(): Promise<void> {
 
 export function enqueueRequestLog(log: RequestLog): void {
 	queue.push(log);
-	if (queue.length > MAX_QUEUE_SIZE) queue.splice(0, queue.length - MAX_QUEUE_SIZE);
+	trimQueue();
 
 	if (queue.length >= BATCH_SIZE) {
 		void flushRequestLogs();
@@ -104,6 +122,8 @@ export async function flushAndStop(timeoutMs = 3000): Promise<void> {
 		clearTimeout(timer);
 	}
 
-	if (queue.length > 0)
-		console.error(`Dropping ${queue.length} unflushed request log(s) on shutdown`);
+	if (queue.length > 0) {
+		requestLogsDropped.inc({}, queue.length);
+		logger.error(`Dropping ${queue.length} unflushed request log(s) on shutdown`);
+	}
 }

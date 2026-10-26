@@ -1,14 +1,17 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import '$lib/server/env'; // validates configuration at server start
 import { auth } from '$lib/server/auth';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
-import { enqueueRequestLog, flushAndStop } from '$lib/server/db/request-logs';
+import { flushAndStop } from '$lib/server/db/request-logs';
 import { closeDb } from '$lib/server/db';
+import { errorMessage, logger } from '$lib/server/log';
+import { logServerError, observeRequest } from '$lib/server/observability';
 
-// Probe paths bypass session lookup and request logging: kubelet sends no cookies and must not
-// write a request_logs row every few seconds.
-const PROBE_PATHS = new Set(['/healthz', '/readyz']);
+// Probe and scrape paths bypass session lookup, request logging and request metrics: kubelet and
+// Prometheus send no cookies and must not write a log line or a request_logs row every few seconds.
+// /metrics checks its own bearer token (routes/metrics/+server.ts).
+const PROBE_PATHS = new Set(['/healthz', '/readyz', '/metrics']);
 
 // adapter-node traps SIGTERM/SIGINT itself, stops accepting connections, waits for in-flight
 // requests, and only then emits 'sveltekit:shutdown'. Hooking that event (rather than the signals)
@@ -21,12 +24,12 @@ const globals = globalThis as typeof globalThis & { [SHUTDOWN_REGISTERED]?: bool
 if (!building && !globals[SHUTDOWN_REGISTERED]) {
 	globals[SHUTDOWN_REGISTERED] = true;
 	(process as NodeJS.EventEmitter).once('sveltekit:shutdown', async (reason: string) => {
-		console.log(`Shutting down (${reason}): flushing request logs and closing the database pool`);
+		logger.info(`Shutting down (${reason}): flushing request logs and closing the database pool`);
 		try {
 			await flushAndStop();
 			await closeDb();
 		} catch (error) {
-			console.error('Error during shutdown:', error);
+			logger.error(`Error during shutdown: ${errorMessage(error)}`);
 			process.exitCode = 1;
 		}
 	});
@@ -48,21 +51,17 @@ const handleBetterAuth: Handle = async ({ event, resolve }) => {
 export const handle: Handle = async ({ event, resolve }) => {
 	if (PROBE_PATHS.has(event.url.pathname)) return resolve(event);
 
-	if (!BRAPI_PATH.test(event.url.pathname)) return handleBetterAuth({ event, resolve });
-
-	const startedAt = performance.now();
+	const observation = observeRequest(event);
 	let status = 500;
 
 	try {
 		const response = await handleBetterAuth({ event, resolve });
 		status = response.status;
-		return response;
+		return observation.stamp(response);
 	} finally {
-		enqueueRequestLog({
-			endpoint: event.url.pathname,
-			method: event.request.method,
-			responseTimeMs: Math.round((performance.now() - startedAt) * 100) / 100,
-			status
-		});
+		observation.finish(status, { brapi: BRAPI_PATH.test(event.url.pathname) });
 	}
 };
+
+// One JSON line (message only) instead of the framework's default, which prints the error object.
+export const handleError: HandleServerError = (input) => logServerError(input);

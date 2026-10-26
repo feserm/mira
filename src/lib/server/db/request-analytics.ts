@@ -26,8 +26,12 @@ export type DashboardAnalytics = {
 	medianResponseTimeMs: number;
 };
 
-// The germplasmDbId path param is collapsed to its route slug before aggregation, so e.g.
-// `/germplasm/germplasm1/mcpd` and `/germplasm/germplasm2/mcpd` count as one endpoint.
+// `request_logs.endpoint` holds a route pattern since S2.9 (`/[repo]/brapi/v2/germplasm/[germplasmDbId]/mcpd`),
+// but rows written before that hold the raw path (`/<repo slug>/brapi/v2/germplasm/<id>/mcpd`). The
+// dashboard reads both with the same expression, so old and new rows land in one group: the leading
+// repo segment (a slug or `[repo]`) is cut off and a germplasm id (or `[germplasmDbId]`) is collapsed to
+// its route slug. Old rows are not migrated; retention (scripts/retention.ts) removes them with the
+// rest after the retention period, and until then they still hold repo slugs (docs/observability.md).
 const endpointPath = sql<string>`regexp_replace(
 	regexp_replace(${requestLogs.endpoint}, '^/[^/]+/brapi/v2', ''),
 	'/germplasm/[^/]+/mcpd$', '/germplasm/[germplasmDbId]/mcpd'

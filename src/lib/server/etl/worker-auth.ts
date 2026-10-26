@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth/minimal';
 import { config } from '$lib/server/env';
 import { baseAuthOptions, sharedPlugins } from '$lib/server/auth-options';
+import { errorMessage, logger } from '$lib/server/log';
 import { findOidcAccountId } from '$lib/server/oidc-account';
 import { TokenError } from './errors';
 import { RefreshLockTimeoutError, withRefreshLock } from '$lib/server/token-refresh-lock';
@@ -40,7 +41,7 @@ export async function getWorkerAccessToken(userId: string): Promise<string> {
 		return tokens.accessToken;
 	} catch (e) {
 		if (e instanceof TokenError || e instanceof RefreshLockTimeoutError) throw e;
-		console.error('etl: token refresh failed:', e instanceof Error ? e.message : e);
+		logger.error(`etl: token refresh failed: ${errorMessage(e)}`);
 		throw new TokenError(SIGN_IN_AGAIN);
 	}
 }

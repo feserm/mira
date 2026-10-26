@@ -117,6 +117,13 @@ secrets:
   oidcClientSecret:
     name: ''
     key: OIDC_CLIENT_SECRET
+  # Optional. The bearer token that opens GET /metrics (METRICS_TOKEN, at least 32 characters). It is
+  # not a MIRA API token and not a session. Empty name = the endpoint does not exist (404), and
+  # monitoring.serviceMonitor cannot be enabled. The web pods read it; the worker serves no port.
+  #   kubectl -n mira create secret generic mira-metrics --from-literal=METRICS_TOKEN="$(openssl rand -hex 32)"
+  metricsToken:
+    name: ''
+    key: METRICS_TOKEN
 
 # --- Migrations ----------------------------------------------------------------------------------
 migration:
@@ -168,6 +175,58 @@ worker:
   podDisruptionBudget:
     enabled: true
     maxUnavailable: 1
+
+# --- Request log retention (S2.9) ----------------------------------------------------------------
+# A CronJob that deletes request_logs rows older than `days`, in batches, with the same image
+# (`node retention.js`) and the app's DML-only database role (secrets.database): no DDL. It reads only
+# DATABASE_URL, DB_SSL and the two settings below. Runbook: docs/observability.md, section Request log retention.
+retention:
+  enabled: true
+  # 03:17 UTC every day, off the hour and after the 02:00 database backup.
+  schedule: '17 3 * * *'
+  # 90 days. The dashboard's daily chart shows 30 days, so below 30 it would show gaps (the schema
+  # enforces that minimum). The endpoint popularity and median cover whatever is stored.
+  days: 90
+  # Rows per delete statement: each batch is its own short transaction.
+  batchSize: 5000
+  activeDeadlineSeconds: 1800
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# --- Monitoring (S2.8) ---------------------------------------------------------------------------
+# Both objects need the Prometheus operator CRDs, so they are off by default: a cluster without the
+# operator installs without them. Metrics are per web pod (the worker serves no port). The scrape path is
+# /metrics on the Service port `http`; it needs secrets.metricsToken. Details: docs/observability.md.
+monitoring:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    # Labels the Prometheus instance selects ServiceMonitors by, e.g. { release: kube-prometheus-stack }.
+    labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
+    # Thresholds of the MIRA rules.
+    errorRatio: 0.05 # share of 5xx among all requests over 5 minutes, for 10 minutes
+    slowRequestSeconds: 5 # p95 request duration over 10 minutes
+    importQueueAgeSeconds: 900 # oldest due job still queued
+    # Rules about the database, written against metrics of CloudNativePG and the Barman Cloud plugin, not
+    # of MIRA (names from docs/postgres-runbook.md section 1, not checked against a running operator).
+    postgres:
+      enabled: true
+      # Where the Postgres cluster runs and what it is called (its pods are <clusterName>-1, -2, ...).
+      namespace: '' # empty = the release namespace
+      clusterName: mira-pg
+      # Replaces the label matcher put on every database metric (default: namespace and pod name from
+      # the two values above), if your scrape labels differ. Example: 'cnpg_cluster="mira-pg"'.
+      selector: ''
+      backupMaxAgeHours: 26
+      connectionRatio: 0.8
 
 # --- Workload ------------------------------------------------------------------------------------
 containerPort: 3000

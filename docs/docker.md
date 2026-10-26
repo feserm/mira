@@ -22,7 +22,7 @@ How it is put together ([Dockerfile](../Dockerfile)):
   steps use `--frozen-lockfile`, so the build fails if `pnpm-lock.yaml` is out of date.
 - **Stages:** `build` (all dependencies, `pnpm build` and `pnpm build:migrate`), `prod-deps`
   (`pnpm install --prod --ignore-scripts`), `runtime` (copies only `node_modules` from `prod-deps`,
-  plus `build/`, `migrate.js`, `worker.js`, `drizzle/` and `package.json`).
+  plus `build/`, `migrate.js`, `worker.js`, `retention.js`, `drizzle/` and `package.json`).
 - **Why a prod `node_modules` at all:** adapter-node leaves everything listed under `dependencies`
   in `package.json` external. That is `@nfdi4plants/arctrl`, `@tabler/icons-svelte-runes` and
   `svelte-grid`. Everything else (including `drizzle-orm`, `postgres` and `better-auth`) is bundled
@@ -114,5 +114,9 @@ Expected: `200 ok` from both probes, `exit=0` after `docker stop`, and the log l
   (`DATABASE_URL`, `ORIGIN`, `BETTER_AUTH_SECRET`, `OIDC_*`); `ETL_*` and `HTTP_*` are optional.
   `worker.js` is one bundle like `migrate.js`, except that `@nfdi4plants/arctrl` stays external and is
   loaded from the image's `node_modules`.
+- **Retention job:** same image, `command: ["node", "retention.js"]`, working directory `/app`. Needs only
+  `DATABASE_URL` (the DML-only role) plus the optional `DB_SSL`, `REQUEST_LOGS_RETENTION_DAYS` and
+  `REQUEST_LOGS_RETENTION_BATCH`; `retention.js` is one bundle like `migrate.js` (`pnpm build:retention`).
+  See [observability.md](observability.md).
 - **Security context:** UID/GID 1000, `readOnlyRootFilesystem: true`,
   `allowPrivilegeEscalation: false`, drop all capabilities.

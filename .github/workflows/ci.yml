@@ -58,6 +58,7 @@ jobs:
       - run: pnpm build
       - run: pnpm build:migrate
       - run: pnpm build:worker
+      - run: pnpm build:retention
 
   audit:
     name: Dependency audit
@@ -74,6 +75,8 @@ jobs:
     env:
       CHART: deploy/helm/mira
       KUBECONFORM_IMAGE: ghcr.io/yannh/kubeconform:v0.6.7
+      PROMTOOL_IMAGE: prom/prometheus:v2.55.1
+      YQ_IMAGE: mikefarah/yq:4.44.3
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
@@ -83,13 +86,49 @@ jobs:
         run: |
           set -eu
           for extra in "" ci/single-replica-values.yaml ci/no-ingress-values.yaml \
-            ci/worker-disabled-values.yaml ci/worker-scaled-values.yaml ci/cnpg-values.yaml; do
+            ci/worker-disabled-values.yaml ci/worker-scaled-values.yaml ci/cnpg-values.yaml \
+            ci/monitoring-values.yaml; do
             set --
             [ -z "$extra" ] || set -- -f "$CHART/$extra"
             helm lint "$CHART" -f "$CHART/ci/default-values.yaml" "$@"
+            # ServiceMonitor and PrometheusRule are CRDs of the Prometheus operator: no schema here, and
+            # they are only rendered by ci/monitoring-values.yaml (the flags are off by default).
             helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" "$@" \
-              | docker run --rm -i "$KUBECONFORM_IMAGE" -strict -summary -
+              | docker run --rm -i "$KUBECONFORM_IMAGE" -strict -summary -skip ServiceMonitor,PrometheusRule -
           done
+      - name: Monitoring and retention flags
+        run: |
+          set -eu
+          render() { helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" "$@"; }
+          # Off by default: a cluster without the Prometheus operator installs without its CRDs.
+          if render | grep -E '^kind: (ServiceMonitor|PrometheusRule)$'; then
+            echo "monitoring objects rendered by default"; exit 1
+          fi
+          render | grep -q '^kind: CronJob$'
+          # On: both objects, the rules include the Postgres alerts from the runbook, and only the web
+          # pods get the metrics token.
+          render -f "$CHART/ci/monitoring-values.yaml" > monitoring.yaml
+          grep -q '^kind: ServiceMonitor$' monitoring.yaml
+          grep -q '^kind: PrometheusRule$' monitoring.yaml
+          grep -q 'alert: MiraPostgresBackupFailed' monitoring.yaml
+          grep -q 'alert: MiraPostgresArchivingFailing' monitoring.yaml
+          grep -q 'alert: MiraPostgresConnectionsHigh' monitoring.yaml
+          test "$(grep -c 'name: METRICS_TOKEN' monitoring.yaml)" = 1
+          # Retention off removes the CronJob and its alert.
+          render -f "$CHART/ci/monitoring-values.yaml" --set retention.enabled=false > no-retention.yaml
+          if grep -qE '^kind: CronJob$|MiraRetentionNotRunning' no-retention.yaml; then
+            echo "retention.enabled=false still renders the CronJob or its alert"; exit 1
+          fi
+      - name: Alert rules pass promtool
+        run: |
+          set -eu
+          mkdir promtool
+          helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" -f "$CHART/ci/monitoring-values.yaml" \
+            --show-only templates/prometheusrule.yaml \
+            | docker run --rm -i "$YQ_IMAGE" '{"groups": .spec.groups}' > promtool/rules.yaml
+          cp "$CHART/ci/rules-test.yaml" promtool/test.yaml
+          tar c -C promtool rules.yaml test.yaml | docker run --rm -i --entrypoint sh "$PROMTOOL_IMAGE" -c \
+            'mkdir /tmp/w && tar x -C /tmp/w && cd /tmp/w && promtool check rules rules.yaml && promtool test rules test.yaml'
       - name: Incomplete values must be rejected
         run: |
           set -eu
@@ -109,6 +148,14 @@ jobs:
             echo "expected a failure for config.db.ssl=maybe"; exit 1
           fi
           grep -q "config.db.ssl" err.log
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set monitoring.serviceMonitor.enabled=true 2> err.log; then
+            echo "expected a failure for a ServiceMonitor without a metrics token Secret"; exit 1
+          fi
+          grep -q "secrets.metricsToken.name" err.log
+          if helm template ci "$CHART" -f "$CHART/ci/default-values.yaml" --set retention.days=10 2> err.log; then
+            echo "expected a failure for retention.days=10"; exit 1
+          fi
+          grep -q "retention.days" err.log
 
   postgres:
     name: Postgres manifests

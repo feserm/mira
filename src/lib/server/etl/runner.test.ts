@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { eq, sql } from 'drizzle-orm';
 import { etlJob } from '$lib/server/db/schema';
 import { FetchTimeoutError } from '$lib/server/fetch-timeout';
+import { setLogSink } from '$lib/server/log';
 import { enqueue, getLatestJob } from './queue';
 import { startRunner, type JobOutcome, type Runner, type RunnerOptions } from './runner';
 import { createTestDb, hasTestDb, type TestDb } from './test-db';
@@ -78,6 +79,62 @@ describe.skipIf(!hasTestDb)('etl runner (real Postgres)', () => {
 		expect(job.error).toBeNull();
 		expect(job.finishedAt).not.toBeNull();
 		expect(job.lockedBy).toBeNull();
+	});
+
+	it('writes structured JSON lines: one per step and one per outcome, with the job and the timings', async () => {
+		const lines: string[] = [];
+		setLogSink((l) => lines.push(l));
+		try {
+			await enq(7);
+			run(
+				'w-log',
+				async (_job, beginStep) => {
+					for (const s of ['extract', 'transform'] as const) {
+						await beginStep(s);
+						await sleep(15);
+					}
+					return { ok: true };
+				},
+				{ log: undefined }
+			);
+			await until(async () => (await stateOf(7)).state === 'succeeded');
+			await until(async () => lines.some((l) => l.includes('succeeded')));
+		} finally {
+			setLogSink(undefined);
+		}
+
+		const entries = lines.map((l) => JSON.parse(l));
+		const job = await stateOf(7);
+		for (const e of entries) {
+			expect(e).toMatchObject({ jobId: job.id, arcId: 7, kind: 'full', workerId: 'w-log' });
+			expect(new Date(e.ts).getTime()).not.toBeNaN();
+		}
+		const steps = entries.filter((e) => e.event === 'etl.step');
+		expect(steps.map((e) => e.step)).toEqual(['extract', 'transform']);
+		expect(steps[1]).toMatchObject({ previousStep: 'extract' });
+		expect(steps[1].previousStepMs).toBeGreaterThanOrEqual(10);
+		const ended = entries.find((e) => e.event === 'etl.job' && e.outcome === 'succeeded');
+		expect(ended).toMatchObject({ level: 'info', lastStep: 'transform' });
+		expect(ended.durationMs).toBeGreaterThanOrEqual(25);
+		expect(ended.msg).toMatch(/^etl: job=.* succeeded in \d+\.\ds$/);
+	});
+
+	it('logs a failed job at error level with the readable error, and a retry at warn', async () => {
+		const lines: string[] = [];
+		setLogSink((l) => lines.push(l));
+		try {
+			await enq(8, 1);
+			run('w-fail', async () => ({ ok: false, error: 'Extract failed: 404', transient: false }), {
+				log: undefined
+			});
+			await until(async () => (await stateOf(8)).state === 'failed');
+			await until(async () => lines.some((l) => l.includes('Extract failed')));
+		} finally {
+			setLogSink(undefined);
+		}
+		const failed = lines.map((l) => JSON.parse(l)).find((e) => e.outcome === 'failed');
+		expect(failed).toMatchObject({ level: 'error', event: 'etl.job', transient: false });
+		expect(failed.msg).toContain('Extract failed: 404');
 	});
 
 	it('retries a transient failure and then succeeds', async () => {

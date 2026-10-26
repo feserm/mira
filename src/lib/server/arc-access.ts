@@ -1,5 +1,7 @@
 import { TokenError } from '$lib/server/etl/errors';
 import { getWorkerAccessToken } from '$lib/server/etl/worker-auth';
+import { errorMessage, logger } from '$lib/server/log';
+import { arcAccessCache, arcAccessOutcomes, gitlabRequests } from '$lib/server/metrics';
 import { fetchProjectForAccess } from '$lib/server/plantdatahub';
 
 /** Whether a user may read an ARC is decided by PLANTdataHUB (GitLab), per request, never from what
@@ -71,12 +73,26 @@ async function readProject(
 	}
 }
 
+/** One GET /projects/:id, counted by whose credentials it used and what came back. A failed call (timeout,
+ *  network) is counted as `error`. Labels are fixed names, never the ARC or the user. */
+async function askGitlab(arcId: number, token?: string): Promise<Response> {
+	const credentials = token ? 'user' : 'anonymous';
+	try {
+		const res = await fetchProjectForAccess(arcId, token);
+		gitlabRequests.inc({ credentials, status_class: `${Math.floor(res.status / 100)}xx` });
+		return res;
+	} catch (e) {
+		gitlabRequests.inc({ credentials, status_class: 'error' });
+		throw e;
+	}
+}
+
 /** Asks GitLab. Never throws: anything unexpected is `unavailable` (fail closed). Never logs a token
  *  or a response body. */
 async function probe(userId: string, arcId: number): Promise<ArcAccess> {
 	try {
 		// 1. Anonymous: a public project is readable by anyone, and does not depend on this user's login.
-		const anonymous = await fetchProjectForAccess(arcId);
+		const anonymous = await askGitlab(arcId);
 		if (isTransientStatus(anonymous.status)) return unavailable(anonymous);
 		if (anonymous.status === 200) {
 			const project = await readProject(anonymous);
@@ -93,7 +109,7 @@ async function probe(userId: string, arcId: number): Promise<ArcAccess> {
 			if (e instanceof TokenError) return UNUSABLE;
 			throw e; // lock wait timed out, database down: cannot tell
 		}
-		const res = await fetchProjectForAccess(arcId, token);
+		const res = await askGitlab(arcId, token);
 		if (res.status === 200) {
 			const project = await readProject(res);
 			if (!project) return unavailable();
@@ -104,11 +120,11 @@ async function probe(userId: string, arcId: number): Promise<ArcAccess> {
 		if (res.status === 404 || res.status === 403) return DENY;
 		if (res.status === 401) return UNUSABLE; // GitLab no longer accepts the stored login
 		if (!isTransientStatus(res.status)) {
-			console.error(`arc-access: unexpected PLANTdataHUB status ${res.status} for ARC ${arcId}`);
+			logger.error(`arc-access: unexpected PLANTdataHUB status ${res.status} for ARC ${arcId}`);
 		}
 		return unavailable(res);
 	} catch (e) {
-		console.error('arc-access: check failed:', e instanceof Error ? e.message : e);
+		logger.error(`arc-access: check failed: ${errorMessage(e)}`);
 		return unavailable();
 	}
 }
@@ -145,10 +161,18 @@ export async function checkArcAccess(userId: string, arcId: number): Promise<Arc
 	const now = Date.now();
 
 	const hit = cache.get(key);
-	if (hit && hit.expiresAt > now) return fromEntry(hit, now);
+	if (hit && hit.expiresAt > now) {
+		const cached = fromEntry(hit, now);
+		arcAccessCache.inc({ result: 'hit' });
+		arcAccessOutcomes.inc({ outcome: outcomeName(cached) });
+		return cached;
+	}
 
 	let pending = inflight.get(key);
-	if (!pending) {
+	if (pending) {
+		arcAccessCache.inc({ result: 'shared' });
+	} else {
+		arcAccessCache.inc({ result: 'miss' });
 		pending = probe(userId, arcId)
 			.then((result) => {
 				if (cache.size > SWEEP_ABOVE) {
@@ -164,7 +188,15 @@ export async function checkArcAccess(userId: string, arcId: number): Promise<Arc
 			.finally(() => inflight.delete(key));
 		inflight.set(key, pending);
 	}
-	return pending;
+	const result = await pending;
+	// every caller counts its own answer, including the ones that shared a call
+	arcAccessOutcomes.inc({ outcome: outcomeName(result) });
+	return result;
+}
+
+/** The metric label of an answer: one of four fixed names. */
+function outcomeName(access: ArcAccess): 'allow' | 'deny' | 'unusable_login' | 'unavailable' {
+	return access.kind === 'unusable-login' ? 'unusable_login' : access.kind;
 }
 
 /** How a non-`allow` answer is shown to the client. The one place that decides the status codes, for

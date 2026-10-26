@@ -20,6 +20,7 @@ import {
 	loginStatus,
 	resetArcAccessCache
 } from './arc-access';
+import { arcAccessCache, arcAccessOutcomes, gitlabRequests, registry } from '$lib/server/metrics';
 
 vi.mock('$lib/server/db', async () => (await import('$lib/server/test-support/db-mock')).dbModule);
 vi.mock(
@@ -46,7 +47,7 @@ describe.skipIf(!hasTestDb)('ARC access check (stubbed PLANTdataHUB, real Postgr
 	beforeEach(async () => {
 		resetArcAccessCache();
 		gitlab = stubGitlab();
-		errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		errors = vi.spyOn(console, 'log').mockImplementation(() => {});
 		// alice is a member of ARC 10, bob has a working login but no membership
 		for (const [id, tok] of [
 			['alice', 'tok-alice'],
@@ -255,6 +256,65 @@ describe.skipIf(!hasTestDb)('ARC access check (stubbed PLANTdataHUB, real Postgr
 			gitlab.setProject(13, { visibility: 'internal' });
 			expect(await kind('carol', 13)).toBe('allow');
 			expect(gitlab.refreshCalls()).toBe(1);
+		});
+	});
+
+	describe('metrics (docs/observability.md)', () => {
+		const outcome = (o: string) => arcAccessOutcomes.value({ outcome: o });
+		const cacheResult = (r: string) => arcAccessCache.value({ result: r });
+		const calls = (credentials: string, status_class: string) =>
+			gitlabRequests.value({ credentials, status_class });
+
+		it('counts every answer by outcome: allow, deny, unusable_login, unavailable', async () => {
+			await seedUser(t.db, 'nologin');
+			const before = ['allow', 'deny', 'unusable_login', 'unavailable'].map(outcome);
+
+			await kind('alice'); // member
+			await kind('bob'); // no membership
+			await kind('nologin'); // no linked login
+			gitlab.failProjects(503);
+			await kind('alice', 99); // GitLab down
+
+			const after = ['allow', 'deny', 'unusable_login', 'unavailable'].map(outcome);
+			expect(after.map((n, i) => n - before[i])).toEqual([1, 1, 1, 1]);
+		});
+
+		it('counts cache hits, misses and shared in-flight calls', async () => {
+			const [hit, miss, shared] = ['hit', 'miss', 'shared'].map(cacheResult);
+
+			await kind('alice'); // miss
+			await kind('alice'); // hit
+			resetArcAccessCache();
+			await Promise.all([kind('bob'), kind('bob')]); // one miss, one shared
+
+			expect(cacheResult('miss') - miss).toBe(2);
+			expect(cacheResult('hit') - hit).toBe(1);
+			expect(cacheResult('shared') - shared).toBe(1);
+			// a cached answer is still an answer
+			const allowBefore = outcome('allow');
+			await kind('alice');
+			expect(outcome('allow') - allowBefore).toBe(1);
+		});
+
+		it('counts PLANTdataHUB calls by whose credentials and the answer, including failures', async () => {
+			const before = [calls('anonymous', '4xx'), calls('user', '2xx'), calls('anonymous', 'error')];
+			await kind('alice'); // private: anonymous 404, then the user's 200
+			gitlab.failProjects('network');
+			resetArcAccessCache();
+			await kind('alice');
+
+			expect(calls('anonymous', '4xx') - before[0]).toBe(1);
+			expect(calls('user', '2xx') - before[1]).toBe(1);
+			expect(calls('anonymous', 'error') - before[2]).toBe(1);
+		});
+
+		it('exposes no user, ARC or token in any label', async () => {
+			await kind('alice');
+			await kind('bob');
+			const text = await registry.render();
+			const arcLines = text.split('\n').filter((l) => /^mira_(arc_access|gitlab)/.test(l));
+			expect(arcLines.length).toBeGreaterThan(0);
+			for (const line of arcLines) expect(line).not.toMatch(/alice|bob|tok-|"10"|arc=|user=/);
 		});
 	});
 

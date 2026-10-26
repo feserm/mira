@@ -1,0 +1,31 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+{{- $token := required "monitoring.serviceMonitor.enabled needs secrets.metricsToken.name: /metrics is protected by that bearer token" .Values.secrets.metricsToken.name }}
+# Scrapes /metrics of every ready web pod (the Service's endpoints), one target per pod. The worker has no
+# port and is not scraped. Needs the Prometheus operator CRDs and a Secret `{{ $token }}` in this namespace.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "mira.fullname" . }}
+  labels:
+    {{- include "mira.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mira.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ $token | quote }}
+          key: {{ .Values.secrets.metricsToken.key | quote }}
+{{- end }}

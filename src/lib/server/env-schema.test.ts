@@ -34,6 +34,17 @@ describe('validateEnv', () => {
 		expect(errors).toEqual(['ADMIN_EMAILS must be a comma separated list of e-mail addresses']);
 	});
 
+	it('METRICS_TOKEN is optional, needs 32 characters, and is never echoed', () => {
+		expect(validateEnv(valid).config.metricsToken).toBeUndefined();
+		expect(validateEnv({ ...valid, METRICS_TOKEN: '  ' }).config.metricsToken).toBeUndefined();
+		const ok = validateEnv({ ...valid, METRICS_TOKEN: ' ' + 'm'.repeat(40) + ' ' });
+		expect(ok.errors).toEqual([]);
+		expect(ok.config.metricsToken).toBe('m'.repeat(40));
+		const short = validateEnv({ ...valid, METRICS_TOKEN: 'short-secret' });
+		expect(short.errors).toEqual(['METRICS_TOKEN must be at least 32 characters']);
+		expect(JSON.stringify(short.errors)).not.toContain('short-secret');
+	});
+
 	it('parses optional settings', () => {
 		const { config, errors } = validateEnv({
 			...valid,

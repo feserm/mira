@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { apiToken } from '$lib/server/db/schema';
 import { createApiToken, revokeApiToken } from '$lib/server/api-token';
 import { TOKEN_RATE_LIMIT } from '$lib/server/brapi/auth';
+import { brapiAuthFailures, tokenRateLimitHits } from '$lib/server/metrics';
 import { REPOS, seedBrapiFixture } from '$lib/server/test-support/brapi-fixture';
 import {
 	anonymousLocals,
@@ -174,7 +175,7 @@ describe.skipIf(!hasTestDb)('BrAPI authentication (real Postgres, DML-only role)
 		expect(stored.lastUsedAt).toBeInstanceOf(Date);
 
 		const failing = await createApiToken(t.userId, 'failing write', 30);
-		const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const err = vi.spyOn(console, 'log').mockImplementation(() => {});
 		const spy = vi.spyOn(t.db, 'update').mockImplementation(() => {
 			throw new Error('db down');
 		});
@@ -182,6 +183,24 @@ describe.skipIf(!hasTestDb)('BrAPI authentication (real Postgres, DML-only role)
 		spy.mockRestore();
 		err.mockRestore();
 		expect(res.status).toBe(200);
+	});
+
+	it('counts refused callers by reason and 429s, without a label that identifies anyone', async () => {
+		const notSignedIn = brapiAuthFailures.value({ reason: 'not_signed_in' });
+		const invalid = brapiAuthFailures.value({ reason: 'invalid_token' });
+		const limited = tokenRateLimitHits.value();
+
+		await trials({ locals: anonymousLocals() });
+		await trials({ locals: anonymousLocals(), headers: bearer('mira_' + 'x'.repeat(43)) });
+		await trials({ locals: anonymousLocals(), headers: { authorization: 'Basic abc' } });
+		expect(brapiAuthFailures.value({ reason: 'not_signed_in' }) - notSignedIn).toBe(1);
+		expect(brapiAuthFailures.value({ reason: 'invalid_token' }) - invalid).toBe(2);
+
+		const busy = await newToken();
+		for (let i = 0; i <= TOKEN_RATE_LIMIT.max + 1; i++) {
+			await trials({ locals: anonymousLocals(), headers: bearer(busy) });
+		}
+		expect(tokenRateLimitHits.value() - limited).toBe(2);
 	});
 
 	it('rate limits one token with 429 and Retry-After, without affecting another token', async () => {

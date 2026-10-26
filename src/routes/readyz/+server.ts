@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
+import { errorMessage, logger } from '$lib/server/log';
 import type { RequestHandler } from './$types';
 
 const READY_TIMEOUT_MS = 2000;
@@ -18,7 +19,7 @@ export const GET: RequestHandler = async () => {
 			headers: { 'cache-control': 'no-store', 'content-type': 'text/plain' }
 		});
 	} catch (error) {
-		console.error('Readiness check failed:', error instanceof Error ? error.message : error);
+		logger.error(`Readiness check failed: ${errorMessage(error)}`);
 		return new Response('database unavailable', {
 			status: 503,
 			headers: { 'cache-control': 'no-store', 'content-type': 'text/plain' }

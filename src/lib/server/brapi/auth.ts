@@ -1,5 +1,6 @@
 import { error, type RequestEvent } from '@sveltejs/kit';
 import { TOKEN_PATTERN, touchLastUsed, verifyApiToken } from '$lib/server/api-token';
+import { brapiAuthFailures, tokenRateLimitHits } from '$lib/server/metrics';
 import { createRateLimiter } from '$lib/server/rate-limit';
 
 type Event = Pick<RequestEvent, 'locals' | 'request' | 'setHeaders'>;
@@ -18,7 +19,12 @@ export function brapiError(status: number, message: string): never {
 	});
 }
 
-function unauthorized(event: Event, message: string): never {
+function unauthorized(
+	event: Event,
+	message: string,
+	reason: 'not_signed_in' | 'invalid_token'
+): never {
+	brapiAuthFailures.inc({ reason });
 	event.setHeaders({ 'www-authenticate': 'Bearer' });
 	brapiError(401, message);
 }
@@ -43,18 +49,20 @@ export async function authenticateBrapi(event: Event, now = new Date()) {
 	const presented = bearerToken(event.request);
 
 	if (presented === undefined) {
-		if (!event.locals.user) unauthorized(event, 'Not signed in');
+		if (!event.locals.user) unauthorized(event, 'Not signed in', 'not_signed_in');
 		event.locals.authMethod = 'session';
 		return event.locals.user;
 	}
 
 	// Never echo the presented value, and do not reveal why it was refused.
-	if (presented === null || !TOKEN_PATTERN.test(presented)) unauthorized(event, 'Invalid token');
+	if (presented === null || !TOKEN_PATTERN.test(presented))
+		unauthorized(event, 'Invalid token', 'invalid_token');
 	const verified = await verifyApiToken(presented, now);
-	if (!verified) unauthorized(event, 'Invalid token');
+	if (!verified) unauthorized(event, 'Invalid token', 'invalid_token');
 
 	const limit = tokenLimiter.hit(verified.tokenId, now.getTime());
 	if (!limit.allowed) {
+		tokenRateLimitHits.inc();
 		event.setHeaders({ 'retry-after': String(limit.retryAfterSeconds) });
 		brapiError(429, 'Too many requests');
 	}

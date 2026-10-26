@@ -12,6 +12,7 @@
 		"build": "vite build",
 		"build:migrate": "vite build --config vite.migrate.config.ts",
 		"build:worker": "vite build --config vite.worker.config.ts",
+		"build:retention": "vite build --config vite.retention.config.ts",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "node scripts/check.mjs",

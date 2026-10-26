@@ -5,7 +5,12 @@ import { config } from '$lib/server/env';
 
 const { poolMax, idleTimeoutSeconds, connectTimeoutSeconds, ssl, prepare } = config.db;
 
+/** Names this process's connections in pg_stat_activity, so `/metrics` can count the ones this pod holds
+ *  (the pod name is the hostname; web and worker pods differ). Postgres cuts it at 63 characters. */
+export const applicationName = `mira-${process.env.HOSTNAME || 'local'}`.slice(0, 63);
+
 const client = postgres(config.databaseUrl, {
+	connection: { application_name: applicationName },
 	max: poolMax,
 	idle_timeout: idleTimeoutSeconds,
 	connect_timeout: connectTimeoutSeconds,

@@ -14,12 +14,13 @@ import { closeDb, db } from '$lib/server/db';
 import { executeJob } from '$lib/server/etl/execute';
 import { startRunner } from '$lib/server/etl/runner';
 import { getWorkerAccessToken } from '$lib/server/etl/worker-auth';
+import { logger } from '$lib/server/log';
 
 const workerId = `${hostname()}-${process.pid}`;
 const { etl } = config;
 
 if (config.db.poolMax < etl.concurrency + 1) {
-	console.warn(
+	logger.warn(
 		`etl: DB_POOL_MAX (${config.db.poolMax}) is below ETL_CONCURRENCY + 1 (${etl.concurrency + 1}); jobs may wait for a connection`
 	);
 }
@@ -41,23 +42,24 @@ const runner = startRunner({
 	// No HTTP port, so no liveness probe: if the database stays unreachable, exit non-zero and let the
 	// kubelet restart the pod.
 	onFatal: (reason) => {
-		console.error(`etl: giving up: ${reason}`);
+		logger.error(`etl: giving up: ${reason}`);
 		process.exit(1);
 	}
 });
 
-console.log(
-	`etl: worker ${workerId} started (concurrency ${etl.concurrency}, lease ${etl.leaseSeconds}s, poll ${etl.pollSeconds}s)`
+logger.info(
+	`etl: worker ${workerId} started (concurrency ${etl.concurrency}, lease ${etl.leaseSeconds}s, poll ${etl.pollSeconds}s)`,
+	{ event: 'etl.started', workerId }
 );
 
 let shuttingDown = false;
 async function shutdown(signal: string) {
 	if (shuttingDown) return;
 	shuttingDown = true;
-	console.log(`etl: ${signal} received, no longer claiming jobs`);
+	logger.info(`etl: ${signal} received, no longer claiming jobs`);
 	await runner.stop();
 	await closeDb(5).catch(() => {});
-	console.log('etl: stopped');
+	logger.info('etl: stopped');
 	process.exit(0);
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'));

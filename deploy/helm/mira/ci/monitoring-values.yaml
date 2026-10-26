@@ -1,0 +1,20 @@
+# Monitoring on (S2.8): the bearer token Secret for /metrics, a ServiceMonitor and the alert rules,
+# including the Postgres rules written against CloudNativePG metrics. Names are placeholders.
+secrets:
+  metricsToken:
+    name: mira-metrics
+monitoring:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+  prometheusRule:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+    postgres:
+      namespace: mira
+      clusterName: mira-pg
+retention:
+  days: 60
+  schedule: '30 2 * * 0'

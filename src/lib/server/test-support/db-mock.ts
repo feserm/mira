@@ -22,4 +22,4 @@ const dbProxy = new Proxy({} as AppDb, {
 	}
 });
 
-export const dbModule = { db: dbProxy, closeDb: async () => {} };
+export const dbModule = { db: dbProxy, closeDb: async () => {}, applicationName: 'mira-test' };

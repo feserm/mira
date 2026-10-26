@@ -5,6 +5,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { apiToken, user } from '$lib/server/db/schema';
+import { logger } from '$lib/server/log';
 
 export const TOKEN_PREFIX = 'mira_';
 /** `mira_` plus 32 random bytes as base64url (43 characters). Checked before any database lookup. */
@@ -159,9 +160,8 @@ export function touchLastUsed(
 		try {
 			await db.update(apiToken).set({ lastUsedAt: now }).where(eq(apiToken.id, token.tokenId));
 		} catch (e) {
-			console.error(
-				`Could not record last use of API token ${token.tokenId}:`,
-				e instanceof Error ? e.message : 'unknown error'
+			logger.error(
+				`Could not record last use of API token ${token.tokenId}: ${e instanceof Error ? e.message : 'unknown error'}`
 			);
 		} finally {
 			writing.delete(token.tokenId);

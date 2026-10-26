@@ -82,7 +82,7 @@ describe.skipIf(!hasTestDb)('ARC pages per-ARC access (stubbed PLANTdataHUB)', (
 	});
 	beforeEach(() => {
 		resetArcAccessCache();
-		errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		errors = vi.spyOn(console, 'log').mockImplementation(() => {});
 		gitlab = stubGitlab();
 		gitlab.acceptToken('tok-alice');
 		gitlab.acceptToken('tok-bob');
