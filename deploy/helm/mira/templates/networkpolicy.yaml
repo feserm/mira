@@ -1,0 +1,120 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $ic := $np.ingressController }}
+{{- $prom := $np.prometheus }}
+# S2.6. Default deny for every pod of the release, then one policy per pod kind. Policies add up, so a
+# pod is allowed what any policy that selects it allows. The migration Job is a Helm hook: on the first
+# install it runs before these objects exist (so it is not restricted yet); on every upgrade they exist.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mira.fullname" . }}-default-deny
+  labels:
+    {{- include "mira.baseLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mira.releaseSelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mira.fullname" . }}-web
+  labels:
+    {{- include "mira.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mira.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ic.namespace | quote }}
+          {{- with $ic.podSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+        {{- if .Values.secrets.metricsToken.name }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $prom.namespace | quote }}
+          {{- with $prom.podSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.containerPort }}
+    {{- with $np.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  egress:
+    {{- include "mira.np.dns" . | nindent 4 }}
+    {{- include "mira.np.postgres" . | nindent 4 }}
+    {{- include "mira.np.hosts" (dict "root" . "ncbi" false) | nindent 4 }}
+    {{- with $np.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- if .Values.worker.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mira.fullname" . }}-worker
+  labels:
+    {{- include "mira.workerLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mira.workerSelectorLabels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- include "mira.np.dns" . | nindent 4 }}
+    {{- include "mira.np.postgres" . | nindent 4 }}
+    {{- include "mira.np.hosts" (dict "root" . "ncbi" true) | nindent 4 }}
+    {{- with $np.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- if .Values.migration.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mira.fullname" . }}-migrate
+  labels:
+    {{- include "mira.baseLabels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mira.migrateSelectorLabels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- include "mira.np.dns" . | nindent 4 }}
+    {{- include "mira.np.postgres" . | nindent 4 }}
+{{- end }}
+{{- if .Values.retention.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mira.fullname" . }}-retention
+  labels:
+    {{- include "mira.retentionLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mira.retentionSelectorLabels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- include "mira.np.dns" . | nindent 4 }}
+    {{- include "mira.np.postgres" . | nindent 4 }}
+{{- end }}
+{{- end }}

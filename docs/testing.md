@@ -54,6 +54,8 @@ network.
 | Observability | `log.test.ts`, `metrics.test.ts`, `hooks.server.test.ts`, `routes/metrics/server.test.ts`, the metric cases in `arc-access.test.ts`, `brapi/v2/auth.test.ts`, `request-logs.test.ts`, the log cases in `etl/runner.test.ts` | the metrics route and the retention and analytics suites yes | S2.8: JSON line shape, request id (accepted, limited, generated, echoed), one line per request, probes quiet, no token, cookie, query string, path or slug in the log or in `/metrics`, `/metrics` protection, label vocabulary, counters |
 | Retention and analytics | `db/retention.test.ts`, `db/request-analytics.test.ts` | yes | S2.9: old rows go and new rows stay, batches, idempotent, as the DML role; route patterns and old raw paths group together |
 
+| Edge hardening | `security-headers.test.ts`, `hooks.server.test.ts`, `routes/csp-report/server.test.ts`, `client-address.test.ts`, `auth-rate-limit.test.ts`, `robots.test.ts`, `env-schema.test.ts` | the rate-limit suite yes | S2.7: headers on pages, BrAPI, errors, redirects and the probes; CSP mode by setting; the report endpoint leaks nothing; the client address from `X-Forwarded-For` (spoofing, depth); better-auth's limiter in Postgres as the DML role (429, `Retry-After`, per client, across a restart, sign-in and `get-session` rules) |
+
 Handlers are called directly with a fake `RequestEvent`. "Who is the caller" lives in one helper
 (`test-support/brapi-event.ts`, `authenticatedLocals()`); when sessions G, H and I change how the user is
 established, edit that helper. Since S2.4 `callBrapi` also takes request `headers` (`bearer(token)`) and returns the
@@ -123,3 +125,10 @@ Every suite that reaches a BrAPI handler, an `/arcs/[id]` entry point or the das
 - The answers are cached in process: call `resetArcAccessCache()` in `beforeEach`, and use `vi.useFakeTimers({ toFake: ['Date'] })` to move past the TTL.
 
 The stub encodes what the access check relies on (anonymous callers see only public projects, an unknown token is a 401, internal projects need any known token, private ones a member). It is **not** evidence that real PLANTdataHUB behaves so: see the S2.4b list in the sprint plan.
+
+## 10. Edge hardening (S2.6, S2.7)
+
+- **Chart checks** (CI job `chart`, no cluster): every value set in `deploy/helm/mira/ci/` is linted and validated with kubeconform (`ServiceMonitor`, `PrometheusRule` and `CiliumNetworkPolicy` have no schema there and are skipped);
+  `ci/check-rendered.mjs` reads the rendered YAML as JSON (`yq ... -o=json`) and asserts the Pod Security `restricted` fields of the web, worker, migration and retention pods and, with `networkPolicy.enabled`, the default deny and the ingress and egress of each pod kind. CI runs it again with deliberately broken values and expects it to fail. Locally, without Helm installed, see the Docker invocation in `.github/workflows/ci.yml` (job `chart`).
+- **The rate limiter against a real Postgres** goes through the real `handle` hook with the real better-auth, not through a copy of its options, so the wiring (the client address, `Retry-After`, the counter) is what is tested. It is slow-ish (about 15 s): it makes several hundred requests to reach the limits.
+- **A real browser:** `scripts/csp-browser-check.mjs` (`docs/security-headers.md` section 3) needs `pnpm build`, a migrated throwaway Postgres and Chromium. It is not part of `pnpm test` or CI: the `client` Vitest project is not run in CI either (see the TODO in `ci.yml`), and the check needs a built app.

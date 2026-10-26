@@ -12,6 +12,8 @@ export const envModule = {
 		authSecret: TEST_AUTH_SECRET,
 		adminEmails: [],
 		db: { poolMax: 10 },
+		security: { cspMode: 'report-only', hstsMaxAgeSeconds: 15_552_000 },
+		proxy: { xffDepth: 1 },
 		// short, so the test of a hanging PLANTdataHUB is quick
 		http: { headersTimeoutSeconds: 1, totalTimeoutSeconds: 2 },
 		oidc: {

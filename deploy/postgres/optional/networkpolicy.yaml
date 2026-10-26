@@ -1,0 +1,59 @@
+# OPTIONAL (S2.6). Not part of the default kustomization. Apply into the namespace of the cluster, after the chart's
+# own policies work (chart value networkPolicy.enabled): `kubectl apply -f deploy/postgres/optional/networkpolicy.yaml -n mira`.
+#
+# What it does: only the app's pods, the cluster's own pods, the operator and Prometheus may open a connection
+# to the database pods. Without it any pod in the cluster can try to log in to mira-pg-rw (it still needs the
+# password and TLS, but the network would not stop it).
+#
+# What it deliberately does NOT do: restrict the database pods' EGRESS. They need the Kubernetes API (the
+# instance manager), the object store for WAL archiving and base backups (docs/infrastructure.md section 3), and
+# each other. The API server has no stable address a policy can name, and a mistake would show up as a stuck
+# archiver, which is the failure that fills the WAL volume. Not restricted, not verified: say so before relying on it.
+#
+# Not verified on a cluster (nothing here has run): that the operator namespace is `cnpg-system` (the install
+# command in deploy/postgres/README.md), that no port other than the ones allowed is needed from outside the
+# cluster's pods, and that the CNI enforces ingress policy at all. A wrong rule shows up as a replica that cannot
+# stream, a cluster that never becomes healthy, or an operator that cannot reach `:8000`.
+#
+# Using the optional Pooler (optional/pooler.yaml): its pods connect to the database too. Add a rule for
+# `cnpg.io/poolerName: mira-pg-pooler-rw` next to the app's, and point the chart's networkPolicy.postgres.podSelector
+# at the pooler's pods. Their labels are from the operator documentation, not checked here.
+#
+# Debugging from a throwaway psql pod is blocked by this policy: use `kubectl cnpg psql` / `kubectl exec` (the API
+# server, not the pod network) or label the pod `app.kubernetes.io/name=mira`.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mira-pg-ingress
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: mira-pg
+  policyTypes: [Ingress]
+  ingress:
+    # The web app, the worker, the migration Job and the retention CronJob (the chart labels all of them).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mira
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Replication and the instance manager's status endpoint between the cluster's own pods.
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: mira-pg
+    # The operator (status on 8000, and whatever the barman-cloud plugin needs: it is installed in the operator's namespace).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+    # Prometheus scraping the instance exporter (needs enablePodMonitor in cluster.yaml, off today).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9187

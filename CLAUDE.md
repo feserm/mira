@@ -57,6 +57,10 @@ trusting better-auth's own lookup — a user can accumulate more than one oidc a
 logs request metrics (endpoint, method, status, response time) for any request matching
 `/[repo]/brapi/v2/...`, via a batched async queue (`src/lib/server/db/request-logs.ts`) so logging
 never blocks the response.
+The same hook adds the security headers to every response (`security-headers.ts`; the page CSP comes from SvelteKit's `kit.csp` in
+`vite.config.ts`, and `CSP_MODE` decides whether it blocks or only reports) and, for `/api/auth/*`, tells better-auth's Postgres-backed rate limiter
+the client address (`client-address.ts`: the `XFF_DEPTH`-th `X-Forwarded-For` entry from the right, never the header's left end). See
+`docs/security-headers.md` and `docs/rate-limits.md`.
 
 ### ETL pipeline: Extract → Transform → Load
 

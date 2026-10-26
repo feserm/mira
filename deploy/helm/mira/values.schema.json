@@ -210,6 +210,33 @@
 				"host": {
 					"type": "string",
 					"pattern": "^[^/\\s:]*$"
+				},
+				"rateLimit": {
+					"type": "object",
+					"properties": {
+						"enabled": {
+							"type": "boolean"
+						},
+						"rps": {
+							"type": "integer",
+							"minimum": 1
+						},
+						"burstMultiplier": {
+							"type": "integer",
+							"minimum": 1
+						},
+						"connections": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"whitelist": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$"
+							}
+						}
+					}
 				}
 			},
 			"if": {
@@ -298,6 +325,172 @@
 				"activeDeadlineSeconds": {
 					"type": "integer",
 					"minimum": 60
+				}
+			}
+		},
+		"security": {
+			"type": "object",
+			"properties": {
+				"csp": {
+					"type": "object",
+					"properties": {
+						"mode": {
+							"enum": ["enforce", "report-only", "off"]
+						}
+					}
+				},
+				"hsts": {
+					"type": "object",
+					"properties": {
+						"maxAge": {
+							"type": "integer",
+							"minimum": 0
+						}
+					}
+				}
+			}
+		},
+		"networkPolicy": {
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"type": "boolean"
+				},
+				"ingressController": {
+					"type": "object",
+					"properties": {
+						"namespace": {
+							"type": "string",
+							"minLength": 1
+						},
+						"podSelector": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							}
+						}
+					}
+				},
+				"prometheus": {
+					"type": "object",
+					"properties": {
+						"namespace": {
+							"type": "string",
+							"minLength": 1
+						},
+						"podSelector": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							}
+						}
+					}
+				},
+				"dns": {
+					"type": "object",
+					"properties": {
+						"namespace": {
+							"type": "string",
+							"minLength": 1
+						},
+						"podSelector": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							}
+						},
+						"cidrs": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$"
+							}
+						}
+					}
+				},
+				"postgres": {
+					"type": "object",
+					"properties": {
+						"port": {
+							"type": "integer",
+							"minimum": 1,
+							"maximum": 65535
+						},
+						"namespace": {
+							"type": "string"
+						},
+						"podSelector": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							}
+						},
+						"cidrs": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$"
+							}
+						}
+					}
+				},
+				"egress": {
+					"type": "object",
+					"properties": {
+						"mode": {
+							"enum": ["cidr", "cilium", "https"]
+						},
+						"plantdatahub": {
+							"type": "object",
+							"properties": {
+								"cidrs": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$"
+									}
+								}
+							}
+						},
+						"ncbi": {
+							"type": "object",
+							"properties": {
+								"enabled": {
+									"type": "boolean"
+								},
+								"host": {
+									"type": "string",
+									"minLength": 1
+								},
+								"cidrs": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$"
+									}
+								}
+							}
+						},
+						"httpsExcept": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$"
+							}
+						}
+					}
+				},
+				"extraEgress": {
+					"type": "array",
+					"items": {
+						"type": "object"
+					}
+				},
+				"extraIngress": {
+					"type": "array",
+					"items": {
+						"type": "object"
+					}
 				}
 			}
 		},

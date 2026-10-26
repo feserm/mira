@@ -37,9 +37,12 @@ config:
   #     With ORIGIN set (this chart always sets it) PROTOCOL_HEADER and HOST_HEADER are IGNORED,
   #     so X-Forwarded-Proto/Host do not matter for login or CSRF. They are set anyway as a
   #     harmless safety net, in case ORIGIN is ever removed.
-  #   * ADDRESS_HEADER/XFF_DEPTH only change the client IP (getClientAddress). MIRA never calls it,
-  #     so ADDRESS_HEADER is left unset: setting it makes getClientAddress throw for requests
-  #     that did not come through the proxy (e.g. kubelet probes).
+  #   * ADDRESS_HEADER/XFF_DEPTH only change the client IP (getClientAddress). ADDRESS_HEADER is left
+  #     unset: setting it makes getClientAddress throw for requests that did not come through the proxy
+  #     (e.g. kubelet probes). MIRA reads XFF_DEPTH itself instead, for the sign-in rate limit: the client
+  #     is the XFF_DEPTH-th entry of X-Forwarded-For from the right (docs/rate-limits.md). Set it to the
+  #     number of proxies that append to the header between the browser and the pod: 1 for the ingress
+  #     controller alone, 2 with a load balancer in front that also appends.
   #   * Only trust the headers when the proxy overwrites them (ingress-nginx does by default,
   #     unless `use-forwarded-headers` is enabled and an untrusted hop sits in front of it).
   origin: ''
@@ -228,6 +231,87 @@ monitoring:
       backupMaxAgeHours: 26
       connectionRatio: 0.8
 
+# --- Security headers (S2.7) ---------------------------------------------------------------------
+# Set by the app on every response (docs/security-headers.md). Nonces, the policy itself and the other
+# headers are fixed in the code; only the two choices below are settings.
+security:
+  csp:
+    # report-only: browsers report violations (mira_csp_violations_total) and block nothing. Start here on
+    # staging; switch to enforce when that counter stays at 0 through real use. off: no CSP header.
+    mode: report-only
+  hsts:
+    # Strict-Transport-Security max-age in seconds (default 180 days), sent only when the origin is https.
+    # 0 = no header. Do not raise it before TLS has been stable for a while: browsers remember it.
+    maxAge: 15552000
+
+# --- Network policies (S2.6) ---------------------------------------------------------------------
+# Off by default, on purpose: the chart cannot know three cluster facts (the namespace of the ingress
+# controller, whether the CNI enforces NetworkPolicy, and the addresses of PLANTdataHUB), and a policy
+# with a wrong guess takes login and imports down. Turn it on once the values below are set, first on
+# staging. When on: every pod of the release is denied all ingress and egress, then each kind gets only
+# what it needs (docs/network-policy.md):
+#   web        in: ingress controller (and Prometheus, with secrets.metricsToken) on containerPort
+#              out: Postgres, PLANTdataHUB, DNS
+#   worker     in: nothing.  out: Postgres, PLANTdataHUB, NCBI, DNS
+#   migrate    out: Postgres, DNS      (the Helm hook Job)
+#   retention  out: Postgres, DNS      (the CronJob)
+# Needs a CNI that enforces NetworkPolicy; on one that does not, the objects are accepted and ignored.
+networkPolicy:
+  enabled: false
+  # Where traffic to the web pods comes from. A controller on the host network is not a pod: use
+  # extraIngress for its node addresses.
+  ingressController:
+    namespace: ingress-nginx
+    podSelector: {} # empty = every pod in that namespace
+  # Where the scrape comes from (only allowed when secrets.metricsToken.name is set).
+  prometheus:
+    namespace: monitoring
+    podSelector: {}
+  dns:
+    namespace: kube-system
+    podSelector:
+      k8s-app: kube-dns
+    # Extra DNS servers by address, e.g. [169.254.20.10/32] for NodeLocal DNSCache.
+    cidrs: []
+  postgres:
+    port: 5432
+    # In the cluster (CloudNativePG): the namespace the cluster runs in (empty = the release namespace) and
+    # the labels of its pods. CloudNativePG labels every instance pod cnpg.io/cluster=<cluster name>.
+    namespace: ''
+    podSelector:
+      cnpg.io/cluster: mira-pg
+    # Outside the cluster: addresses instead. When set, namespace and podSelector are ignored.
+    cidrs: []
+  # Egress to hosts. A NetworkPolicy cannot name a host, so there are three ways (docs/network-policy.md):
+  #   cidr   (default) the addresses you list below. Portable, but you must keep them current.
+  #   cilium a CiliumNetworkPolicy with toFQDNs for the host names. Needs Cilium; no addresses.
+  #   https  TCP 443 (and the issuer's port) to any address outside the private ranges in httpsExcept.
+  #          Works everywhere and needs no addresses, but allows every public HTTPS host.
+  egress:
+    mode: cidr
+    plantdatahub:
+      # The addresses of the host in config.oidc.issuerUrl. REQUIRED in cidr mode (the chart refuses to
+      # render without them): without them login, the ARC list and imports cannot work.
+      cidrs: []
+    ncbi:
+      # The worker looks up crop names at NCBI E-utils. Failure is already best effort (the column stays
+      # empty), so enabled=true with no cidrs only drops that lookup.
+      enabled: true
+      host: eutils.ncbi.nlm.nih.gov
+      cidrs: []
+    httpsExcept:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+      - 100.64.0.0/10
+      - 127.0.0.0/8
+  # Raw NetworkPolicy rules added to the web and worker pods (extraEgress) or the web pods (extraIngress):
+  # an egress proxy, a host-network ingress controller, a second database. The migration Job and the
+  # retention CronJob get only Postgres and DNS, whatever is set here.
+  extraEgress: []
+  extraIngress: []
+
 # --- Workload ------------------------------------------------------------------------------------
 containerPort: 3000
 
@@ -310,6 +394,23 @@ ingress:
   # `use-forwarded-headers` is enabled in its ConfigMap, so nothing is needed here. For example:
   #   cert-manager.io/cluster-issuer: letsencrypt
   annotations: {}
+  # Per-client-address request limit at the controller (ingress-nginx annotations). Off by default: nginx
+  # counts by the address it sees, and whether that is the real client (not a load balancer or a node) is a
+  # property of the cluster, so check it on staging first (docs/rate-limits.md). When on, a client over the
+  # limit gets the controller's own answer, 503 by default (set `limit-req-status-code: "429"` in the
+  # controller's ConfigMap, a cluster-wide setting); MIRA never sees those requests.
+  #   rps 20, burst 5x: a page load is about 16 requests (a few of them /api/auth/get-session), so one
+  #   address can load about 6 pages at once and then 1 per second on average. The per-token BrAPI limit
+  #   (60/min, enforced by the app) is 1 request/second per token, so 20 busy tokens behind one address
+  #   still fit. The sign-in endpoints have their own limit in the app (docs/rate-limits.md).
+  rateLimit:
+    enabled: false
+    rps: 20
+    burstMultiplier: 5
+    # Simultaneous connections per address; 0 = no limit.
+    connections: 0
+    # Addresses (CIDR) that are never limited, e.g. a monitoring probe or a scanner of the institute.
+    whitelist: []
   tls:
     enabled: true
     # Empty = <release>-mira-tls. The Secret is created by cert-manager or by you.

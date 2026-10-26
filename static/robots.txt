@@ -1,3 +1,5 @@
-# allow crawling everything by default
+# MIRA is a private application: every page needs a PLANTdataHUB sign-in and the BrAPI endpoints need a
+# token. Nothing here is for search engines or other crawlers. Responses also carry
+# `X-Robots-Tag: noindex, nofollow`, for a crawler that ignores this file.
 User-agent: *
-Disallow:
+Disallow: /

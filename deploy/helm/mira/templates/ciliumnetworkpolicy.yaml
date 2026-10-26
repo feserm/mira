@@ -1,0 +1,75 @@
+{{- if and .Values.networkPolicy.enabled (eq .Values.networkPolicy.egress.mode "cilium") }}
+{{- $np := .Values.networkPolicy }}
+{{- $issuerHost := (urlParse .Values.config.oidc.issuerUrl).hostname }}
+{{- $port := include "mira.issuerPort" . }}
+# networkPolicy.egress.mode=cilium: egress to PLANTdataHUB (and, for the worker, NCBI) by host name, which a
+# plain NetworkPolicy cannot express. Cilium unions this with the NetworkPolicies of networkPolicy.yaml.
+# The DNS rule is part of it because Cilium learns the addresses behind a name from the DNS answers it
+# sees. Needs Cilium's CRDs (kubeconform in CI skips the kind, there is no schema for it in this repo).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "mira.fullname" . }}-fqdn-web
+  labels:
+    {{- include "mira.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "mira.selectorLabels" . | nindent 6 }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ $np.dns.namespace | quote }}
+            {{- toYaml $np.dns.podSelector | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: {{ $issuerHost | quote }}
+      toPorts:
+        - ports:
+            - port: {{ $port | quote }}
+              protocol: TCP
+{{- if .Values.worker.enabled }}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "mira.fullname" . }}-fqdn-worker
+  labels:
+    {{- include "mira.workerLabels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "mira.workerSelectorLabels" . | nindent 6 }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ $np.dns.namespace | quote }}
+            {{- toYaml $np.dns.podSelector | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: {{ $issuerHost | quote }}
+        {{- if $np.egress.ncbi.enabled }}
+        - matchName: {{ $np.egress.ncbi.host | quote }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ $port | quote }}
+              protocol: TCP
+            {{- if ne $port "443" }}
+            - port: "443"
+              protocol: TCP
+            {{- end }}
+{{- end }}
+{{- end }}

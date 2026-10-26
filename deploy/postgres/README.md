@@ -15,6 +15,7 @@ below that needs a cluster is for a human to tick off on staging.
 | [objectstore.yaml](objectstore.yaml)                         | Barman Cloud `ObjectStore` (placeholder endpoint and bucket), 30-day retention             |
 | [scheduled-backup.yaml](scheduled-backup.yaml)               | Daily base backup 02:00                                                                    |
 | [optional/pooler.yaml](optional/pooler.yaml)                 | PgBouncer `Pooler`, not applied by default                                                 |
+| [optional/networkpolicy.yaml](optional/networkpolicy.yaml)   | Ingress-only policy: app pods, the cluster itself, the operator, Prometheus; not applied   |
 | [restore/cluster-restore.yaml](restore/cluster-restore.yaml) | Example `Cluster` for a point-in-time restore (the drill)                                  |
 | [create-secrets.sh](create-secrets.sh)                       | Creates the three Secrets that nothing else creates                                        |
 | [validate.sh](validate.sh)                                   | Renders and validates everything against the pinned CRDs                                   |
@@ -100,6 +101,15 @@ Not needed at the current size (docs/infrastructure.md section 5). To enable: `k
 then give `secrets.database` a `DATABASE_URL` whose host is `mira-pg-pooler-rw`. Keep `migration.databaseSecret` on the direct
 `mira-pg-app` Secret. Check: `kubectl -n mira get pooler`, and a login as `mira_app` through the pooler (`psql -h mira-pg-pooler-rw`).
 The pooler's TLS certificate and its names are documented but untested.
+
+## Network policy (optional)
+
+Decided in S2.6 (docs/network-policy.md): the chart's policies restrict what the **app** pods can reach, and
+`optional/networkpolicy.yaml` restricts who can reach the **database** pods (ingress only). It is not in the
+kustomization: apply it after the chart's policies work, `kubectl apply -f deploy/postgres/optional/networkpolicy.yaml -n mira`.
+No egress policy for the database pods: they need the Kubernetes API, the object store and each other, and a mistake would
+stop WAL archiving. The throwaway psql pod of the verification list below is blocked by it: add
+`--labels app.kubernetes.io/name=mira` to that command, or use `kubectl cnpg psql`. Not applied or verified on a cluster.
 
 ## Validate offline
 

@@ -10,7 +10,13 @@ const enqueueRequestLog = vi.fn();
 const getSession = vi.fn(async () => null);
 
 vi.mock('$app/environment', () => ({ building: true }));
-vi.mock('$lib/server/env', () => ({ config: {} }));
+vi.mock('$lib/server/env', () => ({
+	config: {
+		origin: 'https://mira.test',
+		security: { cspMode: 'report-only', hstsMaxAgeSeconds: 15_552_000 },
+		proxy: { xffDepth: 1 }
+	}
+}));
 vi.mock('$lib/server/db', () => ({ closeDb: async () => {} }));
 vi.mock('$lib/server/db/request-logs', () => ({
 	enqueueRequestLog: (...args: unknown[]) => enqueueRequestLog(...args),
@@ -146,7 +152,7 @@ describe('request id', () => {
 });
 
 describe('probes and the scrape', () => {
-	it.each(['/healthz', '/readyz', '/metrics'])(
+	it.each(['/healthz', '/readyz', '/metrics', '/csp-report'])(
 		'%s: no log line, no session lookup, no row',
 		async (path) => {
 			getSession.mockClear();
@@ -159,6 +165,71 @@ describe('probes and the scrape', () => {
 			expect(response.headers.get('x-request-id')).toBeNull();
 		}
 	);
+});
+
+describe('security headers', () => {
+	const PAGE_CSP = "default-src 'none'; script-src 'self' 'nonce-abc'";
+	const always = [
+		'x-content-type-options',
+		'x-frame-options',
+		'referrer-policy',
+		'permissions-policy'
+	];
+
+	it("are on a page, with SvelteKit's policy under the report-only name (the configured mode)", async () => {
+		const { response } = await call({
+			respond: () =>
+				new Response('<html>', {
+					headers: { 'content-type': 'text/html', 'content-security-policy': PAGE_CSP }
+				})
+		});
+		for (const name of always) expect(response.headers.get(name), name).toBeTruthy();
+		expect(response.headers.get('content-security-policy-report-only')).toBe(PAGE_CSP);
+		expect(response.headers.has('content-security-policy')).toBe(false);
+		expect(response.headers.get('strict-transport-security')).toMatch(/^max-age=\d+$/);
+	});
+
+	it('are on a BrAPI response and on an error response', async () => {
+		for (const status of [200, 401, 404, 429, 500]) {
+			const { response } = await call({
+				path: '/some-repo/brapi/v2/trials',
+				route: '/[repo]/brapi/v2/trials',
+				respond: () =>
+					new Response('{}', { status, headers: { 'content-type': 'application/json' } })
+			});
+			for (const name of always)
+				expect(response.headers.get(name), `${status} ${name}`).toBeTruthy();
+			expect(response.headers.get('content-security-policy-report-only')).toContain(
+				"default-src 'none'"
+			);
+		}
+	});
+
+	it('are on a redirect, next to the request id', async () => {
+		const { response } = await call({
+			respond: () => Response.redirect('http://localhost/x', 302)
+		});
+		expect(response.status).toBe(302);
+		for (const name of [...always, 'x-request-id'])
+			expect(response.headers.get(name), name).toBeTruthy();
+		expect(response.headers.get('location')).toBe('http://localhost/x');
+	});
+
+	it.each(['/healthz', '/readyz', '/metrics', '/csp-report'])(
+		'are on %s too, which still takes no log line and no session lookup',
+		async (path) => {
+			getSession.mockClear();
+			const { response } = await call({ path, route: path });
+			for (const name of always) expect(response.headers.get(name), name).toBeTruthy();
+			expect(lines).toHaveLength(0);
+			expect(getSession).not.toHaveBeenCalled();
+		}
+	);
+
+	it('do not change what the log line says', async () => {
+		await call({ path: '/arcs', route: '/arcs' });
+		expect(logged()[0]).toMatchObject({ msg: 'request', route: '/arcs', status: 200 });
+	});
 });
 
 describe('request_logs rows', () => {

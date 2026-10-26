@@ -3,6 +3,8 @@
  *  failed, but never echo a value -- several of these are secrets. */
 
 export type DbSsl = 'require' | 'allow' | 'prefer' | 'verify-full';
+/** What the Content-Security-Policy does: block (`enforce`), only report (`report-only`), or is not sent. */
+export type CspMode = 'enforce' | 'report-only' | 'off';
 
 export interface ServerConfig {
 	databaseUrl: string;
@@ -25,6 +27,19 @@ export interface ServerConfig {
 		ssl?: DbSsl;
 		/** Named prepared statements (postgres.js default). Off only behind a pooler that cannot track them. */
 		prepare: boolean;
+	};
+	/** Headers for browsers (docs/security-headers.md). */
+	security: {
+		cspMode: CspMode;
+		/** `Strict-Transport-Security` max-age in seconds; 0 sends no header. Only sent when ORIGIN is https. */
+		hstsMaxAgeSeconds: number;
+	};
+	/** The proxies in front of the app. Also read by adapter-node (`XFF_DEPTH`), which this app never asks
+	 *  for the client address (docs/rate-limits.md); the better-auth limiter does. */
+	proxy: {
+		/** How many trusted proxies append to `X-Forwarded-For`: the client is that many entries from the right.
+		 *  Unset: the header is not trusted at all and the socket peer is the client. */
+		xffDepth?: number;
 	};
 	/** Timeouts for every outbound HTTP call (PLANTdataHUB). */
 	http: {
@@ -54,6 +69,9 @@ const MIN_SECRET_LENGTH = 32;
 const DEFAULT_POOL_MAX = 10;
 const DEFAULT_SCOPES = 'openid profile email';
 const SSL_MODES: readonly DbSsl[] = ['require', 'allow', 'prefer', 'verify-full'];
+const CSP_MODES: readonly CspMode[] = ['enforce', 'report-only', 'off'];
+// 180 days. Long enough to matter, short enough that a TLS mistake does not lock people out for a year.
+const DEFAULT_HSTS_MAX_AGE = 15_552_000;
 
 function parseUrl(value: string): URL | undefined {
 	try {
@@ -167,6 +185,16 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 		errors.push('HTTP_HEADERS_TIMEOUT must not be larger than HTTP_TIMEOUT');
 	}
 
+	let cspMode: CspMode = 'report-only';
+	const cspRaw = get('CSP_MODE').toLowerCase();
+	if ((CSP_MODES as readonly string[]).includes(cspRaw)) {
+		cspMode = cspRaw as CspMode;
+	} else if (cspRaw) {
+		errors.push(`CSP_MODE must be one of: ${CSP_MODES.join(', ')}`);
+	}
+	const hstsMaxAgeSeconds = integer('HSTS_MAX_AGE', 0) ?? DEFAULT_HSTS_MAX_AGE;
+	const xffDepth = integer('XFF_DEPTH', 1);
+
 	const leaseSeconds = integer('ETL_LEASE_SECONDS', 10) ?? 60;
 
 	return {
@@ -184,6 +212,8 @@ export function validateEnv(raw: RawEnv): EnvValidation {
 				scopes: (get('OIDC_SCOPES') || DEFAULT_SCOPES).split(/\s+/)
 			},
 			db: { poolMax, idleTimeoutSeconds, connectTimeoutSeconds, ssl, prepare },
+			security: { cspMode, hstsMaxAgeSeconds },
+			proxy: { xffDepth },
 			http: { headersTimeoutSeconds, totalTimeoutSeconds },
 			etl: {
 				concurrency: integer('ETL_CONCURRENCY', 1) ?? 1,
