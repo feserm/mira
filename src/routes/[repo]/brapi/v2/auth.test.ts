@@ -51,7 +51,7 @@ describe.skipIf(!hasTestDb)('BrAPI authentication (real Postgres, DML-only role)
 	});
 	afterEach(() => vi.useRealTimers());
 
-	const trials = (opts: Parameters<typeof callBrapi>[1]) =>
+	const trials = (opts: Omit<Parameters<typeof callBrapi>[1], 'repo'>) =>
 		callBrapi(trialsGET, { repo: REPOS.alpha, ...opts });
 	const newToken = async (days: number | null = 30) =>
 		(await createApiToken(t.userId, 't', days)).token;
