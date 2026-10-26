@@ -6,3 +6,4 @@ export * from './brapi/germplasm';
 export * from './brapi/phenotyping';
 export * from './dashboard';
 export * from './logging';
+export * from './api-token';

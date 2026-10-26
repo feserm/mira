@@ -224,5 +224,6 @@ export interface BrapiService {
 export interface BrapiServerInfo {
 	serverName?: string;
 	serverDescription?: string;
+	documentationURL?: string;
 	calls: BrapiService[];
 }

@@ -52,7 +52,8 @@ network.
 
 Handlers are called directly with a fake `RequestEvent`. "Who is the caller" lives in one helper
 (`test-support/brapi-event.ts`, `authenticatedLocals()`); when sessions G, H and I change how the user is
-established, edit that helper. Since S2.2 it takes a role (`authenticatedLocals(userId, 'admin')`, default `'user'`).
+established, edit that helper. Since S2.4 `callBrapi` also takes request `headers` (`bearer(token)`) and returns the
+headers the handler set and the final `locals`; API-token callers are tested in `brapi/v2/auth.test.ts`. Since S2.2 it takes a role (`authenticatedLocals(userId, 'admin')`, default `'user'`).
 
 ## 3. Database role: the integration tests run as the DML role
 

@@ -77,6 +77,9 @@
 					</div>
 					<ul class="menu w-full p-0 pt-1">
 						<li class="w-full">
+							<a href={resolve('/account/tokens')}>API tokens</a>
+						</li>
+						<li class="w-full">
 							<button
 								onclick={logout}
 								class="w-full text-error hover:bg-error/10 focus:bg-error/10"

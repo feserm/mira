@@ -22,6 +22,7 @@ import {
 	parseBrapiPagination,
 	hasMalformedDbId
 } from '$lib/server/brapi/response';
+import { authenticateBrapi } from '$lib/server/brapi/auth';
 import type { RequestHandler } from './$types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -55,7 +56,7 @@ function parseDate(param: string, value: string | null): string | undefined {
 }
 
 export const GET: RequestHandler = async (event) => {
-	if (!event.locals.user) error(401, 'Not signed in');
+	await authenticateBrapi(event);
 
 	const arcId = await resolveArcId(event.params.repo);
 
