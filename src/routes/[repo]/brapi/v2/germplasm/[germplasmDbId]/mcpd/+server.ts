@@ -5,10 +5,11 @@ import { germplasm, observationUnit } from '$lib/server/db/schema';
 import { resolveArcId } from '$lib/server/brapi/arc';
 import type { GermplasmMcpd, StorageTypeCode } from '$lib/types/brapi/germplasm';
 import { brapiJson, brapiSingleResponse, isDbId } from '$lib/server/brapi/response';
+import { authenticateBrapi } from '$lib/server/brapi/auth';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
-	if (!event.locals.user) error(401, 'Not signed in');
+	await authenticateBrapi(event);
 
 	const arcId = await resolveArcId(event.params.repo);
 	const { germplasmDbId } = event.params;

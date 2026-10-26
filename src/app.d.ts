@@ -9,9 +9,16 @@ declare global {
 			// after the column was added). Use `isAdmin` / `requireAdmin` from `$lib/server/auth-guard`.
 			user?: User & { role?: string | null };
 			session?: Session;
+			// Set by `authenticateBrapi` (BrAPI routes only): a session cookie or an API token. S2.4b checks GitLab
+			// access for the token owner, so it reads `user` the same way for both.
+			authMethod?: 'session' | 'token';
 		}
 
-		// interface Error {}
+		// BrAPI errors also carry the standard `metadata.status` list (see `brapi/auth.ts`).
+		interface Error {
+			message: string;
+			metadata?: { datafiles: unknown[]; status: { message: string; messageType: string }[] };
+		}
 		// interface PageData {}
 		// interface PageState {}
 		// interface Platform {}

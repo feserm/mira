@@ -1,4 +1,3 @@
-import { error } from '@sveltejs/kit';
 import { and, asc, count, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '$lib/server/db';
@@ -11,12 +10,13 @@ import {
 	parseBrapiPagination,
 	hasMalformedDbId
 } from '$lib/server/brapi/response';
+import { authenticateBrapi } from '$lib/server/brapi/auth';
 import type { RequestHandler } from './$types';
 
 const parentLocation = alias(location, 'parent_location');
 
 export const GET: RequestHandler = async (event) => {
-	if (!event.locals.user) error(401, 'Not signed in');
+	await authenticateBrapi(event);
 
 	const arcId = await resolveArcId(event.params.repo);
 
