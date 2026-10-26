@@ -142,6 +142,9 @@
 {:else}
 	{@const analytics = data.analytics}
 	<div class="mx-auto max-w-full">
+		{#if data.arcNotice}
+			<div class="mx-2 mt-2 alert alert-warning" role="status">{data.arcNotice}</div>
+		{/if}
 		{#if browser}
 			<Grid
 				bind:items

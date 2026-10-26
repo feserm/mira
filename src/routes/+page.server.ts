@@ -2,15 +2,10 @@ import { fail } from '@sveltejs/kit';
 import { isAdmin } from '$lib/server/auth-guard';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import {
-	account,
-	roCrateStaging,
-	user,
-	userDashboards,
-	type DashboardLayoutItem
-} from '$lib/server/db/schema';
+import { account, user, userDashboards, type DashboardLayoutItem } from '$lib/server/db/schema';
 import { getDashboardAnalytics } from '$lib/server/db/request-analytics';
 import { getBrapiTableCounts } from '$lib/server/db/brapi-analytics';
+import { accessibleArcs } from '$lib/server/dashboard-access';
 import type { Actions, PageServerLoad } from './$types';
 
 const defaultLayout: DashboardLayoutItem[] = [
@@ -38,18 +33,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			? requestedServerId
 			: undefined;
 
-	const [[dashboard], [analytics, brapiTableCounts, servers, users]] = await Promise.all([
+	// The ARC list and the table counts cover only the ARCs this viewer can read on PLANTdataHUB.
+	// Request metrics are about the server's traffic and are not filtered (the endpoint list holds
+	// route patterns, never repo slugs).
+	const { arcs: servers, notice: arcNotice } = await accessibleArcs(locals.user.id);
+	// `?server=` narrows the counts to one ARC, but only one the viewer can read.
+	const selected = servers.find((s) => s.id === selectedServerId)?.id;
+	const countedArcIds = selected !== undefined ? [selected] : servers.map((s) => s.id);
+
+	const [[dashboard], [analytics, brapiTableCounts, users]] = await Promise.all([
 		db.select().from(userDashboards).where(eq(userDashboards.userId, locals.user.id)),
 		Promise.all([
 			getDashboardAnalytics(),
-			getBrapiTableCounts(selectedServerId),
-			db
-				.select({
-					id: roCrateStaging.arcId,
-					alias: roCrateStaging.path
-				})
-				.from(roCrateStaging)
-				.orderBy(roCrateStaging.path),
+			getBrapiTableCounts(countedArcIds),
 			admin
 				? db
 						.select({
@@ -73,8 +69,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		authenticated: true,
 		analytics,
 		brapiTableCounts,
-		selectedServerId: selectedServerId ?? null,
+		selectedServerId: selected ?? null,
 		servers,
+		arcNotice,
 		users
 	};
 };
